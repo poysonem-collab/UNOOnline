@@ -9,14 +9,16 @@ interface OpponentProps {
   /** Disconnected right now. */
   away?: boolean;
   onCatch: () => void;
+  /** Lets the table find this player on screen, for flying-card animations. */
+  elRef?: (el: HTMLDivElement | null) => void;
 }
 
 const MAX_FAN = 8;
 
-export function Opponent({ player, isTurn, canCatch, score, away, onCatch }: OpponentProps) {
+export function Opponent({ player, isTurn, canCatch, score, away, onCatch, elRef }: OpponentProps) {
   const fan = Math.min(player.handCount, MAX_FAN);
   return (
-    <div className={`opponent ${isTurn ? 'opponent--turn' : ''} ${away ? 'opponent--away' : ''}`}>
+    <div ref={elRef} className={`opponent ${isTurn ? 'opponent--turn' : ''} ${away ? 'opponent--away' : ''}`}>
       <div className="opponent__top">
         <span className="opponent__avatar" aria-hidden>{player.isBot ? '🤖' : player.name[0]?.toUpperCase()}</span>
         <span className="opponent__name">{player.name}</span>

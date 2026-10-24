@@ -14,6 +14,7 @@ import {
   type PlayerView,
   type RuleSet,
 } from '@uno/shared';
+import type { EventBatch } from '../effects/eventEffects';
 
 export interface LocalGameConfig {
   variantId: string;
@@ -50,11 +51,13 @@ export function useLocalGame(config: LocalGameConfig) {
   const stateRef = useRef(state);
   const [log, setLog] = useState<LogEntry[]>([]);
   const logId = useRef(0);
+  const [events, setEvents] = useState<EventBatch | null>(null);
 
   const commit = useCallback((result: ActionResult): string | null => {
     if (!result.ok) return result.error;
     stateRef.current = result.state;
     setState(result.state);
+    setEvents((prev) => ({ seq: (prev?.seq ?? 0) + 1, events: result.events, at: Date.now() }));
     const lines = result.events
       .map((e) => describeEvent(e, result.state.players, YOU))
       .filter((t): t is string => t !== null)
@@ -139,6 +142,7 @@ export function useLocalGame(config: LocalGameConfig) {
     dealKey: `${gameNumber}-${state.round}`,
     view,
     log,
+    events,
     playableIds,
     act: (action: Action) => act(YOU, action),
     nextRound,

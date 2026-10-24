@@ -65,6 +65,7 @@ function OnlineTable({ room, game, onLeave }: { room: Room; game: OnlineGame; on
       key={`${view.round}-${view.scores.join(',')}-${game.update.view.phase === 'gameOver'}`}
       view={view}
       log={room.log}
+      events={room.events}
       playableIds={playableIdsFromView(view)}
       onAction={room.act}
       endActions={endActions}

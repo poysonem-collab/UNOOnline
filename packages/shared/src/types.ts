@@ -102,8 +102,16 @@ export interface GameState {
   gameWinner: number | null;
   scores: number[];
   round: number;
+  /** Who won each finished round, and for how many points. */
+  history: RoundResult[];
   /** Seeded RNG state so games are reproducible. */
   rng: number;
+}
+
+export interface RoundResult {
+  round: number;
+  winner: number;
+  points: number;
 }
 
 export type Action =
@@ -158,5 +166,8 @@ export interface PlayerView {
   gameWinner: number | null;
   scores: number[];
   round: number;
+  history: RoundResult[];
+  /** Everyone's leftover cards, shown once a round is over. */
+  revealedHands: Card[][] | null;
   rules: RuleSet;
 }

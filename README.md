@@ -99,7 +99,7 @@ That server must list the Pages address in its `CORS_ORIGINS` setting (see `rend
 - [x] Step 3: Lobby with room codes, invite links and host rules
 - [x] Step 4: Online games (friends and bots together, turn timer, rejoin after refresh)
 - [x] Step 5: House rules (stacking, same numbers, 7-0, jump-in, draw until playable, +4 challenge, no action finish)
-- [ ] Step 6: Polish (sounds, animations, scoreboard)
+- [x] Step 6: Polish (sound effects with a mute button, flying-card animations, big callouts, confetti, end-of-round breakdown and scoreboard)
 - [ ] Step 7: Hosting polish
 
 UNO is a trademark of Mattel. This is an unofficial fan project; the card art is drawn from scratch.

@@ -48,6 +48,7 @@ export function makeState(opts: {
     gameWinner: null,
     scores: opts.hands.map(() => 0),
     round: 1,
+    history: [],
     rng: 42,
   };
 }

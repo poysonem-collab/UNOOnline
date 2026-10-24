@@ -16,7 +16,7 @@ const HOUSE_RULES: { key: HouseRule; label: string; hint: string }[] = [
   { key: 'stackSameNumber', label: 'Stack same numbers', hint: 'Play several cards of the same number at once, in any colors.' },
   { key: 'sevenZero', label: '7-0', hint: 'Playing a 7 swaps hands with a player you choose. Playing a 0 passes every hand along.' },
   { key: 'jumpIn', label: 'Jump-in', hint: 'Have the exact same card as the top one? Play it any time, even out of turn.' },
-  { key: 'drawUntilPlayable', label: 'Draw until playable', hint: 'Keep drawing until you get a card you can play.' },
+  { key: 'drawUntilPlayable', label: 'Draw until playable', hint: 'Keep drawing until you get a card you can play. Hands get big, so games run longer.' },
   { key: 'challengeWild4', label: 'Challenge Wild +4', hint: 'A +4 is only allowed with no card of the current color. Challenge it: a bluffer draws 4, otherwise you draw 6.' },
   { key: 'noActionFinish', label: 'No finishing on action cards', hint: 'Your last card has to be a number card.' },
 ];

@@ -14,6 +14,7 @@ export function LocalGame({ config, onExit }: { config: LocalGameConfig; onExit:
       key={game.dealKey}
       view={game.view}
       log={game.log}
+      events={game.events}
       playableIds={game.playableIds}
       onAction={game.act}
       endActions={endActions}

@@ -9,6 +9,7 @@ import {
   type LobbyState,
   type RuleSet,
 } from '@uno/shared';
+import type { EventBatch } from '../effects/eventEffects';
 import type { LogEntry } from '../local/useLocalGame';
 import { api, getSocket } from '../net/socket';
 import { clearSession, loadSession, saveSession } from '../net/session';
@@ -41,6 +42,7 @@ export function useRoom(joined: JoinedRoom) {
   const [game, setGame] = useState<OnlineGame | null>(joined.game && toOnlineGame(joined.game));
   const [log, setLog] = useState<LogEntry[]>([]);
   const logId = useRef(0);
+  const [events, setEvents] = useState<EventBatch | null>(null);
   const [connected, setConnected] = useState(true);
   /** Set when you can no longer be in this room; the screen should send you back. */
   const [ended, setEnded] = useState<string | null>(null);
@@ -57,6 +59,9 @@ export function useRoom(joined: JoinedRoom) {
     };
     const onGame = (update: GameUpdate) => {
       setGame(toOnlineGame(update));
+      if (update.events.length) {
+        setEvents((prev) => ({ seq: (prev?.seq ?? 0) + 1, events: update.events, at: Date.now() }));
+      }
       const lines = update.events
         .map((e) => describeEvent(e, update.view.players, update.view.you))
         .filter((t): t is string => t !== null)
@@ -119,6 +124,7 @@ export function useRoom(joined: JoinedRoom) {
     lobby,
     game: lobby.status === 'playing' ? game : null,
     log,
+    events,
     playerId,
     isHost: lobby.hostId === playerId,
     connected,

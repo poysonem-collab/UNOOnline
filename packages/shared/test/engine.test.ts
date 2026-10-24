@@ -256,6 +256,15 @@ describe('ending rounds', () => {
 });
 
 describe('player view', () => {
+  it('reveals every hand once the round is over, with the round history', () => {
+    const state = makeState({ hands: [['r1'], ['y9', 'wild']], top: 'r5', rules: { winCondition: 'points500' } });
+    expect(getPlayerView(state, 0).revealedHands).toBeNull();
+    const after = ok(applyAction(state, 0, { type: 'play', cardIds: [cardId(state, 0, 0)] }));
+    const view = getPlayerView(after, 0);
+    expect(view.revealedHands![1]!.map((c) => c.value)).toEqual([9, 'wild']);
+    expect(view.history).toEqual([{ round: 1, winner: 0, points: 59 }]);
+  });
+
   it('only shows your own hand', () => {
     const state = createGame(players(3), DEFAULT_RULES, 3);
     const view = getPlayerView(state, 1);

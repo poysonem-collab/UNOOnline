@@ -46,6 +46,7 @@ export function createGame(players: PlayerInfo[], rules: RuleSet, seed: number):
     gameWinner: null,
     scores: players.map(() => 0),
     round: 1,
+    history: [],
     rng: seed >>> 0,
   };
   dealRound(state, []);
@@ -98,6 +99,8 @@ export function getPlayerView(state: GameState, seat: number): PlayerView {
     gameWinner: state.gameWinner,
     scores: state.scores,
     round: state.round,
+    history: state.history,
+    revealedHands: state.phase === 'roundOver' || state.phase === 'gameOver' ? state.players.map((p) => p.hand) : null,
     rules: state.rules,
   };
 }
@@ -441,6 +444,7 @@ function endRound(state: GameState, winner: number, events: GameEvent[]): void {
     0,
   );
   state.scores[winner]! += points;
+  state.history.push({ round: state.round, winner, points });
   state.roundWinner = winner;
   state.unoVulnerable = null;
   events.push({ type: 'roundOver', winner, points });

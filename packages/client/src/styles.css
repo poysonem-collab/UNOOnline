@@ -751,3 +751,101 @@ button:disabled { cursor: not-allowed; }
 .swap-picker__player:hover { background: rgba(255, 255, 255, 0.15); }
 .swap-picker__name { font-weight: 700; flex: 1; }
 .swap-picker__count { color: var(--muted); font-size: 0.9rem; }
+
+/* ---------- Polish: effects & scoreboard ---------- */
+
+.table__tools { display: flex; align-items: center; gap: 0.3rem; }
+.icon-btn {
+  border: 0;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  width: 2.1rem;
+  height: 2.1rem;
+  font-size: 1rem;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.icon-btn:hover { background: rgba(255, 255, 255, 0.22); }
+
+.flights { position: fixed; inset: 0; pointer-events: none; z-index: 8; }
+.flight { position: absolute; top: 0; left: 0; }
+.flight .card { --card-w: 100%; width: 100%; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45); }
+
+.discard__card--incoming { visibility: hidden; }
+
+.burst {
+  position: fixed;
+  left: 50%;
+  top: 42%;
+  z-index: 9;
+  pointer-events: none;
+  font-size: clamp(2.6rem, 11vw, 5rem);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  color: #fff;
+  -webkit-text-stroke: 2px rgba(0, 0, 0, 0.6);
+  paint-order: stroke fill;
+  text-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
+  animation: burst 1.1s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+}
+.burst--penalty { color: #ff6a3d; }
+.burst--uno { color: var(--accent); }
+.burst--good { color: #7fe07a; }
+@keyframes burst {
+  0% { transform: translate(-50%, -50%) scale(0.3) rotate(-8deg); opacity: 0; }
+  18% { transform: translate(-50%, -50%) scale(1.15) rotate(-4deg); opacity: 1; }
+  30% { transform: translate(-50%, -50%) scale(1) rotate(-4deg); }
+  75% { opacity: 1; }
+  100% { transform: translate(-50%, -60%) scale(1) rotate(-4deg); opacity: 0; }
+}
+
+.confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 11; }
+
+.modal__box--wide { width: min(460px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; }
+.modal__subtitle { font-size: 0.95rem; margin: 1.1rem 0 0.4rem; text-align: left; color: var(--muted); }
+
+.card--tiny { --card-w: 22px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); }
+
+.revealed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; text-align: left; }
+.revealed__row {
+  display: grid;
+  grid-template-columns: minmax(4rem, 7rem) 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 10px;
+  background: var(--panel);
+}
+.revealed__row.is-winner { background: rgba(236, 212, 7, 0.18); }
+.revealed__name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.revealed__cards { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; min-width: 0; }
+.revealed__out { color: var(--accent); font-weight: 700; font-size: 0.85rem; }
+.revealed__more { font-size: 0.75rem; color: var(--muted); margin-left: 0.2rem; }
+.revealed__points { font-weight: 800; font-variant-numeric: tabular-nums; }
+.revealed__row.is-winner .revealed__points { color: var(--accent); }
+
+.standings { list-style: none; margin: 0.4rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.standings__row {
+  display: grid;
+  grid-template-columns: 2rem minmax(3rem, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 10px;
+  background: var(--panel);
+  text-align: left;
+}
+.standings__row:has(.standings__bar) { grid-template-columns: 2rem minmax(3rem, 7rem) 1fr auto; }
+.standings__row.is-you { outline: 2px solid rgba(255, 255, 255, 0.25); }
+.standings__name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.standings__bar { height: 0.5rem; border-radius: 999px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.standings__bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #ff9d2e); border-radius: inherit; }
+.standings__score { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+.history { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.history th { text-align: left; color: var(--muted); font-weight: 600; padding: 0.3rem 0.5rem; }
+.history td { padding: 0.35rem 0.5rem; border-top: 1px solid rgba(255, 255, 255, 0.08); text-align: left; }
+.history td:last-child, .history th:last-child { text-align: right; }

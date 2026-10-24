@@ -2,8 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { colorName, describeCard, type Action, type Card as CardData, type Color, type PlayerView } from '@uno/shared';
 import { Card, CardBack, CARD_COLORS } from './Card';
 import { ColorPicker } from './ColorPicker';
+import { Confetti } from './Confetti';
+import { Flights, type Flight } from './Flights';
 import { Opponent } from './Opponent';
+import { RevealedHands, ScoreboardModal, Standings } from './Scoreboard';
 import { SwapPicker } from './SwapPicker';
+import { burstFor, soundsFor, type Burst, type EventBatch } from '../effects/eventEffects';
+import { playSound, playSounds } from '../effects/sound';
+import { useMuted } from '../effects/useMuted';
 import type { LogEntry } from '../local/useLocalGame';
 
 export interface EndAction {
@@ -32,7 +38,15 @@ interface GameTableProps {
   awayIds?: Set<string>;
   /** Banner across the top, e.g. connection problems. */
   notice?: string | null;
+  /** The latest move's events, for sounds and animations. */
+  events?: EventBatch | null;
 }
+
+const TITLE = 'UNO Online';
+/** A batch older than this when the table mounts is old news: don't replay it. */
+const FRESH_MS = 800;
+
+const prefersReducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** Whole seconds until `deadline`, updating while it counts down. */
 function useCountdown(deadline: number | null | undefined): number | null {
@@ -66,7 +80,7 @@ function tilt(id: string): number {
 
 export function GameTable({
   view, log, playableIds, onAction, endActions, endNote, onExit, exitLabel = '← Menu',
-  turnEndsAt, nextRoundAt, awayIds, notice,
+  turnEndsAt, nextRoundAt, awayIds, notice, events,
 }: GameTableProps) {
   /** A play waiting on a choice: the wild's color, or who to swap hands with. */
   const [picker, setPicker] = useState<{ kind: 'color' | 'swap'; cardIds: string[]; color?: Color } | null>(null);
@@ -76,6 +90,16 @@ export function GameTable({
   const secondsLeft = useCountdown(turnEndsAt);
   const [error, setError] = useState<string | null>(null);
   const [pile, setPile] = useState<CardData[]>([view.topCard]);
+  const [flights, setFlights] = useState<Flight[]>([]);
+  const flightId = useRef(0);
+  const [burst, setBurst] = useState<(Burst & { key: number }) | null>(null);
+  const [showScores, setShowScores] = useState(false);
+  const [muted, setMuted] = useMuted();
+  const drawPileRef = useRef<HTMLButtonElement>(null);
+  const discardRef = useRef<HTMLDivElement>(null);
+  const handRef = useRef<HTMLDivElement>(null);
+  const seatEls = useRef(new Map<number, HTMLElement>());
+  const handledSeq = useRef(events && Date.now() - events.at > FRESH_MS ? events.seq : -1);
 
   // Keep the last few discards visible under the top card.
   useEffect(() => {
@@ -90,6 +114,69 @@ export function GameTable({
 
   const you = view.players[view.you]!;
   const yourTurn = view.currentPlayer === view.you && (view.phase === 'playing' || view.phase === 'playDrawn');
+
+  // Each new move: sounds, a callout for big moments, and cards flying across the table.
+  useEffect(() => {
+    if (!events || events.seq === handledSeq.current) return;
+    handledSeq.current = events.seq;
+    playSounds(soundsFor(events.events, view.you));
+    const callout = burstFor(events.events, view.you, view.players.map((p) => p.name));
+    if (callout) setBurst({ ...callout, key: events.seq });
+    if (prefersReducedMotion() || document.hidden) return;
+
+    const placeOf = (seat: number) =>
+      (seat === view.you ? handRef.current : seatEls.current.get(seat))?.getBoundingClientRect();
+    const discard = discardRef.current?.getBoundingClientRect();
+    const drawPile = drawPileRef.current?.getBoundingClientRect();
+    const width = discard?.width ?? 80;
+    const next: Flight[] = [];
+    for (const e of events.events) {
+      if (e.type === 'played') {
+        const from = placeOf(e.seat);
+        if (from && discard) next.push({ id: flightId.current++, from, to: discard, card: e.cards[e.cards.length - 1]!, width, delay: 0 });
+      } else if (e.type === 'drew') {
+        const to = placeOf(e.seat);
+        for (let i = 0; i < Math.min(e.count, 3) && to && drawPile; i++) {
+          next.push({ id: flightId.current++, from: drawPile, to, card: null, width, delay: i * 80 });
+        }
+      }
+    }
+    if (next.length) setFlights((f) => [...f, ...next]);
+  }, [events, view.you, view.players]);
+
+  useEffect(() => {
+    if (!burst) return;
+    const t = setTimeout(() => setBurst(null), 1100);
+    return () => clearTimeout(t);
+  }, [burst]);
+
+  // Your turn: a chime, a buzz on phones, and a hint in the tab title if you're looking elsewhere.
+  const wasYourTurn = useRef(yourTurn);
+  useEffect(() => {
+    if (yourTurn && !wasYourTurn.current) {
+      playSound('yourTurn');
+      navigator.vibrate?.(40);
+    }
+    wasYourTurn.current = yourTurn;
+    if (!yourTurn) {
+      document.title = TITLE;
+      return;
+    }
+    const update = () => {
+      document.title = document.hidden ? `🔔 Your turn! · ${TITLE}` : TITLE;
+    };
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      document.removeEventListener('visibilitychange', update);
+      document.title = TITLE;
+    };
+  }, [yourTurn]);
+
+  // Tick through the last seconds of your turn timer.
+  useEffect(() => {
+    if (yourTurn && secondsLeft !== null && secondsLeft > 0 && secondsLeft <= 5) playSound('tick');
+  }, [yourTurn, secondsLeft]);
   const gameActive = view.phase === 'playing' || view.phase === 'playDrawn';
   const pointsMode = view.rules.winCondition === 'points500';
   const hand = useMemo(() => sortHand(view.hand), [view.hand]);
@@ -166,7 +253,13 @@ export function GameTable({
       <header className="table__header">
         <button type="button" className="btn btn--ghost btn--small" onClick={onExit}>{exitLabel}</button>
         <span className="table__round">{pointsMode ? `Round ${view.round} · First to 500` : 'First out wins'}</span>
-        <span className="table__you-score">{pointsMode ? `You: ${view.scores[view.you]} pts` : ''}</span>
+        <span className="table__tools">
+          {pointsMode && <span className="table__you-score">You: {view.scores[view.you]} pts</span>}
+          <button type="button" className="icon-btn" onClick={() => setShowScores(true)} aria-label="Scores" title="Scores">🏆</button>
+          <button type="button" className="icon-btn" onClick={() => setMuted(!muted)} aria-label={muted ? 'Turn sound on' : 'Mute sound'} title={muted ? 'Sound off' : 'Sound on'}>
+            {muted ? '🔇' : '🔊'}
+          </button>
+        </span>
       </header>
 
       {notice && <div className="table__notice" role="status">{notice}</div>}
@@ -181,6 +274,10 @@ export function GameTable({
             score={pointsMode ? view.scores[seat]! : null}
             away={awayIds?.has(p.id) ?? false}
             onCatch={() => run({ type: 'catchUno', target: seat })}
+            elRef={(el) => {
+              if (el) seatEls.current.set(seat, el);
+              else seatEls.current.delete(seat);
+            }}
           />
         ))}
       </section>
@@ -191,6 +288,7 @@ export function GameTable({
         </div>
 
         <button
+          ref={drawPileRef}
           type="button" className="draw-pile"
           onClick={() => run({ type: 'draw' })}
           disabled={!yourTurn || view.phase !== 'playing'}
@@ -201,9 +299,18 @@ export function GameTable({
           <span className="draw-pile__count">{view.drawPileCount}</span>
         </button>
 
-        <div className="discard" style={{ ['--glow' as string]: CARD_COLORS[view.currentColor] }} aria-label={`Top card: ${describeCard(view.topCard)}`}>
+        <div ref={discardRef} className="discard" style={{ ['--glow' as string]: CARD_COLORS[view.currentColor] }} aria-label={`Top card: ${describeCard(view.topCard)}`}>
           {pile.map((card, i) => (
-            <div key={card.id} className={`discard__card ${i === pile.length - 1 ? 'discard__card--top' : ''}`} style={{ ['--tilt' as string]: `${tilt(card.id)}deg` }}>
+            <div
+              key={card.id}
+              className={[
+                'discard__card',
+                i === pile.length - 1 ? 'discard__card--top' : '',
+                // Hidden until the flying copy lands on it.
+                flights.some((f) => f.card?.id === card.id) ? 'discard__card--incoming' : '',
+              ].join(' ')}
+              style={{ ['--tilt' as string]: `${tilt(card.id)}deg` }}
+            >
               <Card card={card} className="card--table" />
             </div>
           ))}
@@ -254,7 +361,7 @@ export function GameTable({
         {base && (
           <p className="you__hint">Tap your other {String(base.value)}s to play them too. The last one you pick sets the color.</p>
         )}
-        <div className="hand" style={{ ['--n' as string]: hand.length }}>
+        <div ref={handRef} className="hand" style={{ ['--n' as string]: hand.length }}>
           {hand.map((card) => {
             const selected = selection.includes(card.id);
             const tappable = base ? selected || isExtra(card) : playableIds.has(card.id);
@@ -280,6 +387,14 @@ export function GameTable({
 
       {error && <div className="toast" role="alert">{error}</div>}
 
+      {burst && (
+        <div key={burst.key} className={`burst burst--${burst.kind}`} aria-hidden>
+          {burst.text}
+        </div>
+      )}
+      <Flights flights={flights} onDone={(id) => setFlights((f) => f.filter((x) => x.id !== id))} />
+      {showScores && <ScoreboardModal view={view} onClose={() => setShowScores(false)} />}
+
       {picker?.kind === 'color' && (
         <ColorPicker onCancel={() => setPicker(null)} onPick={(color) => submitPlay(picker.cardIds, color)} />
       )}
@@ -302,28 +417,25 @@ function RoundOver({ view, actions, note, nextRoundAt }: { view: PlayerView; act
   const gameOver = view.phase === 'gameOver';
   const nextIn = useCountdown(gameOver ? null : nextRoundAt);
   const winnerSeat = gameOver ? view.gameWinner! : view.roundWinner!;
-  const winner = winnerSeat === view.you ? 'You' : view.players[winnerSeat]!.name;
-  const standings = view.players
-    .map((p, seat) => ({ name: seat === view.you ? 'You' : p.name, score: view.scores[seat]!, seat }))
-    .sort((a, b) => b.score - a.score);
+  const youWon = winnerSeat === view.you;
+  const winner = youWon ? 'You' : view.players[winnerSeat]!.name;
+  const pointsMode = view.rules.winCondition === 'points500';
 
   return (
     <div className="modal" role="dialog" aria-label={gameOver ? 'Game over' : 'Round over'}>
-      <div className="modal__box">
+      {youWon && <Confetti />}
+      <div className="modal__box modal__box--wide">
         <h2 className="modal__title">
-          {winnerSeat === view.you ? '🎉 ' : ''}
+          {youWon ? '🎉 ' : ''}
           {winner} won {gameOver ? 'the game!' : `round ${view.round}!`}
         </h2>
-        <table className="scores">
-          <tbody>
-            {standings.map((s) => (
-              <tr key={s.seat} className={s.seat === winnerSeat ? 'is-winner' : ''}>
-                <td>{s.name}</td>
-                <td>{s.score} pts</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <RevealedHands view={view} />
+        {pointsMode && (
+          <>
+            <h3 className="modal__subtitle">Total scores</h3>
+            <Standings view={view} />
+          </>
+        )}
         {nextIn !== null && <p className="modal__note">Next round starts in {nextIn}s</p>}
         {note && <p className="modal__note">{note}</p>}
         <div className="modal__actions">
