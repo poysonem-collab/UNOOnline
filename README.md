@@ -22,6 +22,18 @@ takes up to a minute.
   - If a flip turns up a wild, the player who flipped picks its color.
   - Rounds are scored by the side in play, with the official values (Draw One 10, Skip Everyone 30,
     Wild 40, Wild Draw Two 50, Wild Draw Color 60...).
+- **UNO Show 'Em No Mercy**: a 168-card deck full of brutal cards, drawn in the real deck's
+  black-bordered style.
+  - **Colored cards**: Skip, Skip Everyone (you go again), Reverse, Draw Two, Draw Four, and
+    Discard All (throw away every card of that color with it).
+  - **Wilds**: Wild Reverse Draw 4, Wild Draw 6, Wild Draw 10, and Wild Color Roulette (the next
+    player picks a color, then flips cards until it turns up and keeps them all).
+  - **Always on**: stacking draw cards (only an equal or bigger one), 7-0, and draw until you can play.
+  - **Mercy rule**: reach 25 cards and you're knocked out for the round. Your cards go back in the
+    deck, but they still count toward the winner's score. The last player standing wins.
+  - Points games play to 1,000 (numbers face value, colored action cards 20, wilds 50).
+  - **Expansion Pack** (optional host rule): adds 10s (play again), Wild Discard All (pick a color to
+    throw away, then the color in play) and Wild Reverse Draw 8. The pack's coins aren't included yet.
 
 Other modes are listed in the menu and unlocked as they're built.
 
@@ -29,7 +41,9 @@ Other modes are listed in the menu and unlocked as they're built.
 
 Each level plays like a different kind of real player. Bots only use what a person at the table
 could know: their own hand, cards played so far, hand sizes, who drew on which color, which color
-someone named with a wild, and (in Flip) the backs of other players' cards.
+someone named with a wild, and (in Flip) the backs of other players' cards. In No Mercy every bot
+stacks back rather than take cards that would knock it out, and the stronger ones aim big draws at
+players close to 25.
 
 | Level | Plays like | What it does |
 |---|---|---|
@@ -132,5 +146,7 @@ That server must list the Pages address in its `CORS_ORIGINS` setting (see `rend
 - [x] Step 6: Polish (sound effects with a mute button, flying-card animations, big callouts, confetti, end-of-round breakdown and scoreboard)
 - [ ] Step 7: Hosting polish
 - [x] UNO Flip
+- [x] Four bot skill levels
+- [x] UNO Show 'Em No Mercy (plus the optional Expansion Pack cards)
 
 UNO is a trademark of Mattel. This is an unofficial fan project; the card art is drawn from scratch.

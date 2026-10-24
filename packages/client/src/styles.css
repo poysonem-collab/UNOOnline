@@ -279,6 +279,8 @@ button:disabled { cursor: not-allowed; }
   height: 100dvh;
   display: grid;
   grid-template-rows: auto auto 1fr auto auto;
+  /* One column that never grows past the screen: a huge hand (No Mercy!) scrolls instead. */
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
 }
 
@@ -429,6 +431,7 @@ button:disabled { cursor: not-allowed; }
 .you { padding: 0 16px 1rem; }
 .you__controls {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   align-items: center;
   gap: 0.6rem;
@@ -878,3 +881,51 @@ button:disabled { cursor: not-allowed; }
 .field--stack .hint { margin: 0; }
 .add-bot { flex-direction: column; align-items: stretch; }
 .add-bot .field { margin: 0; }
+
+/* ---------- UNO Show 'Em No Mercy ---------- */
+
+.table--nomercy {
+  background: radial-gradient(ellipse at center, #5a1414 0%, #1c0606 100%);
+}
+.table--nomercy .direction svg { stroke: #ff9b8a; }
+.rules__builtin {
+  font-size: 0.85rem;
+  color: var(--muted);
+  background: rgba(215, 38, 0, 0.18);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  margin: 0 0 0.4rem;
+}
+.badge--danger {
+  background: #ff3b30;
+  color: #fff;
+  font-style: normal;
+  animation: danger-pulse 1s ease-in-out infinite alternate;
+}
+@keyframes danger-pulse {
+  to { box-shadow: 0 0 0 4px rgba(255, 59, 48, 0.35); }
+}
+.you__out {
+  text-align: center;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: var(--radius);
+  padding: 0.6rem 16px;
+  margin: 0.4rem auto;
+  max-width: 34rem;
+}
+.opponent--out { opacity: 0.45; filter: grayscale(0.8); }
+.opponent--out .opponent__fan { visibility: hidden; }
+.tag--out { background: rgba(0, 0, 0, 0.55); color: #ff9b8a; }
+.opponent__count--danger { color: #ff6b5e; }
+.revealed__knocked { color: #ff9b8a; font-weight: 700; font-size: 0.85rem; }
+@media (prefers-reduced-motion: reduce) {
+  .badge--danger { animation: none; }
+}
+.card__number--upright { font-style: normal; }
+.card__back-tag {
+  font-family: 'Arial Black', 'Helvetica Neue', Arial, sans-serif;
+  font-weight: 900;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+}

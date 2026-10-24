@@ -1,13 +1,12 @@
-import { cardPoints, flipPoints, type PlayerView } from '@uno/shared';
+import { deckFor, type PlayerView } from '@uno/shared';
 import { Card } from './Card';
 
-const POINTS_TO_WIN = 500;
 const MEDALS = ['🥇', '🥈', '🥉'];
 const MAX_TINY_CARDS = 10;
 
 const nameOf = (view: PlayerView, seat: number) => (seat === view.you ? 'You' : view.players[seat]!.name);
 
-/** Total scores, best first, with progress toward 500 in points games. */
+/** Total scores, best first, with progress toward the target in points games. */
 export function Standings({ view }: { view: PlayerView }) {
   const pointsMode = view.rules.winCondition === 'points500';
   const rows = view.players
@@ -21,7 +20,7 @@ export function Standings({ view }: { view: PlayerView }) {
           <span className="standings__name">{r.name}</span>
           {pointsMode && (
             <span className="standings__bar" aria-hidden>
-              <span style={{ width: `${Math.min(100, (r.score / POINTS_TO_WIN) * 100)}%` }} />
+              <span style={{ width: `${Math.min(100, (r.score / view.pointsToWin) * 100)}%` }} />
             </span>
           )}
           <span className="standings__score">{r.score}</span>
@@ -36,12 +35,13 @@ export function RevealedHands({ view }: { view: PlayerView }) {
   const hands = view.revealedHands;
   if (!hands) return null;
   const winner = view.phase === 'gameOver' ? view.gameWinner : view.roundWinner;
-  // UNO Flip scores by its own values, for the side in play.
-  const pointsOf = view.side ? flipPoints : cardPoints;
+  // Each version scores by its own card values (UNO Flip: for the side in play).
+  const pointsOf = deckFor(view.variantId).points;
   const rows = hands
-    .map((hand, seat) => ({ seat, hand, points: hand.reduce((s, c) => s + pointsOf(c), 0) }))
-    .sort((a, b) => (a.seat === winner ? -1 : b.seat === winner ? 1 : a.points - b.points));
-  const total = rows.reduce((s, r) => s + r.points, 0);
+    .map((hand, seat) => ({ seat, hand, out: view.players[seat]!.out, points: hand.reduce((s, c) => s + pointsOf(c), 0) }))
+    .sort((a, b) => (a.seat === winner ? -1 : b.seat === winner ? 1 : Number(a.out) - Number(b.out) || a.points - b.points));
+  // The engine's total also counts the hands knocked out in No Mercy.
+  const total = view.history.at(-1)?.points ?? 0;
 
   return (
     <ul className="revealed">
@@ -49,12 +49,13 @@ export function RevealedHands({ view }: { view: PlayerView }) {
         <li key={r.seat} className={`revealed__row ${r.seat === winner ? 'is-winner' : ''}`}>
           <span className="revealed__name">{nameOf(view, r.seat)}</span>
           <span className="revealed__cards">
-            {r.seat === winner
-              ? <span className="revealed__out">Went out!</span>
-              : r.hand.slice(0, MAX_TINY_CARDS).map((c) => <Card key={c.id} card={c} className="card--tiny" />)}
+            {r.seat === winner && r.hand.length === 0 && <span className="revealed__out">Went out!</span>}
+            {r.seat === winner && r.hand.length > 0 && <span className="revealed__out">Last one standing!</span>}
+            {r.out && <span className="revealed__knocked">Knocked out</span>}
+            {r.seat !== winner && r.hand.slice(0, MAX_TINY_CARDS).map((c) => <Card key={c.id} card={c} className="card--tiny" />)}
             {r.hand.length > MAX_TINY_CARDS && <span className="revealed__more">+{r.hand.length - MAX_TINY_CARDS}</span>}
           </span>
-          <span className="revealed__points">{r.seat === winner ? `+${total}` : r.points}</span>
+          <span className="revealed__points">{r.seat === winner ? `+${total}` : r.out ? '' : r.points}</span>
         </li>
       ))}
     </ul>
@@ -88,7 +89,7 @@ export function ScoreboardModal({ view, onClose }: { view: PlayerView; onClose: 
     <div className="modal" role="dialog" aria-label="Scores" onClick={onClose}>
       <div className="modal__box modal__box--wide" onClick={(e) => e.stopPropagation()}>
         <h2>Scores</h2>
-        <p className="hint">{pointsMode ? `First to ${POINTS_TO_WIN} points wins.` : 'First player out wins.'}</p>
+        <p className="hint">{pointsMode ? `First to ${view.pointsToWin} points wins.` : 'First player out wins.'}</p>
         <Standings view={view} />
         <h3 className="modal__subtitle">Rounds</h3>
         <RoundHistory view={view} />

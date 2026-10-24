@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { colorName, colorsForSide, describeCard, type Action, type Card as CardData, type Color, type PlayerView } from '@uno/shared';
-import { Card, CardBack, CARD_COLORS } from './Card';
+import { Card, CardBack, CARD_COLORS, CardThemeContext, cardThemeFor } from './Card';
 import { ColorPicker } from './ColorPicker';
 import { Confetti } from './Confetti';
 import { Flights, type Flight } from './Flights';
@@ -62,9 +62,12 @@ function useCountdown(deadline: number | null | undefined): number | null {
 
 const COLOR_ORDER = ['red', 'yellow', 'green', 'blue', 'pink', 'teal', 'orange', 'purple', 'wild'];
 const VALUE_ORDER = [
-  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-  'skip', 'skipAll', 'reverse', 'flip', 'draw1', 'draw2', 'draw5', 'wild', 'wild2', 'wild4', 'wildColor',
+  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+  'skip', 'skipAll', 'reverse', 'flip', 'discardAll', 'draw1', 'draw2', 'draw4', 'draw5',
+  'wild', 'wild2', 'wild4', 'wildColor', 'roulette', 'wildDiscardAll', 'wildRev4', 'wild6', 'wildRev8', 'wild10',
 ];
+/** No Mercy: warn when your hand gets this close to the Mercy limit. */
+const MERCY_WARNING = 5;
 
 function sortHand(hand: CardData[]): CardData[] {
   return [...hand].sort(
@@ -85,8 +88,8 @@ export function GameTable({
   view, log, playableIds, onAction, endActions, endNote, onExit, exitLabel = '← Menu',
   turnEndsAt, nextRoundAt, awayIds, notice, events,
 }: GameTableProps) {
-  /** A play waiting on a choice: the wild's color, or who to swap hands with. */
-  const [picker, setPicker] = useState<{ kind: 'color' | 'swap'; cardIds: string[]; color?: Color } | null>(null);
+  /** A play waiting on a choice: the wild's color, the color to discard, or who to swap hands with. */
+  const [picker, setPicker] = useState<{ kind: 'color' | 'discard' | 'swap'; cardIds: string[]; color?: Color; discardColor?: Color } | null>(null);
   /** Same-number stacking: cards picked so far; the first is the one that must be playable. */
   const [selection, setSelection] = useState<string[]>([]);
   const sending = useRef(false);
@@ -122,8 +125,9 @@ export function GameTable({
   }, [error]);
 
   const you = view.players[view.you]!;
-  const gameActive = view.phase === 'playing' || view.phase === 'playDrawn' || view.phase === 'chooseColor';
+  const gameActive = view.phase === 'playing' || view.phase === 'playDrawn' || view.phase === 'chooseColor' || view.phase === 'roulette';
   const yourTurn = view.currentPlayer === view.you && gameActive;
+  const noMercy = view.variantId === 'no-mercy';
   const sideColors = colorsForSide(view.side);
 
   // Each new move: sounds, a callout for big moments, and cards flying across the table.
@@ -149,6 +153,12 @@ export function GameTable({
         const to = placeOf(e.seat);
         for (let i = 0; i < Math.min(e.count, 3) && to && drawPile; i++) {
           next.push({ id: flightId.current++, from: drawPile, to, card: null, width, delay: i * 80 });
+        }
+      } else if (e.type === 'eliminated') {
+        // Knocked out: their hand goes back into the deck.
+        const from = placeOf(e.seat);
+        for (let i = 0; i < 4 && from && drawPile; i++) {
+          next.push({ id: flightId.current++, from, to: drawPile, card: null, width, delay: 300 + i * 90 });
         }
       }
     }
@@ -215,14 +225,19 @@ export function GameTable({
   const cardById = (id: string) => view.hand.find((c) => c.id === id)!;
 
   /** Plays the cards, first asking for a color or a swap target if the last card needs one. */
-  const submitPlay = (cardIds: string[], color?: Color, swapWith?: number) => {
+  const submitPlay = (cardIds: string[], color?: Color, swapWith?: number, discardColor?: Color) => {
     const last = cardById(cardIds[cardIds.length - 1]!);
-    if (last.color === 'wild' && !color) return setPicker({ kind: 'color', cardIds });
+    // Wild Discard All asks which color to throw away first, then the color in play.
+    if (last.value === 'wildDiscardAll' && !discardColor) return setPicker({ kind: 'discard', cardIds });
+    if (last.color === 'wild' && last.value !== 'roulette' && !color) return setPicker({ kind: 'color', cardIds, discardColor });
     const swaps = view.rules.sevenZero && last.value === 7 && view.hand.length > cardIds.length;
     if (swaps && swapWith === undefined) return setPicker({ kind: 'swap', cardIds, color });
     setPicker(null);
     setSelection([]);
-    run({ type: 'play', cardIds, ...(color ? { color } : {}), ...(swapWith !== undefined ? { swapWith } : {}) });
+    run({
+      type: 'play', cardIds,
+      ...(color ? { color } : {}), ...(swapWith !== undefined ? { swapWith } : {}), ...(discardColor ? { discardColor } : {}),
+    });
   };
 
   const base = selection.length ? cardById(selection[0]!) : null;
@@ -243,13 +258,24 @@ export function GameTable({
   };
 
   const pending = view.pendingDraw;
+  // No Mercy: a Discard All can take you from many cards to one, so you call UNO before playing it.
+  const discardLeavesOne = view.hand.some((c) => {
+    if (!playableIds.has(c.id)) return false;
+    const leaves = (color: Color) => view.hand.filter((h) => h !== c && h.color !== color).length === 1;
+    if (c.value === 'discardAll') return leaves(c.color as Color);
+    return c.value === 'wildDiscardAll' && sideColors.some(leaves);
+  });
   const canCallUno =
-    gameActive && !you.calledUno && (view.hand.length <= 2 || (selection.length > 0 && view.hand.length - selection.length === 1));
+    gameActive && !you.out && !you.calledUno &&
+    (view.hand.length <= 2 || discardLeavesOne || (selection.length > 0 && view.hand.length - selection.length === 1));
+  const danger = view.mercyLimit !== null && !you.out && gameActive && view.hand.length >= view.mercyLimit - MERCY_WARNING;
   const canJumpIn = !yourTurn && gameActive && playableIds.size > 0;
   const current = view.players[view.currentPlayer]!;
   const status =
     !gameActive ? ''
     : view.phase === 'chooseColor' ? (yourTurn ? 'The flip turned up a wild: choose a color' : `${current.name} is choosing a color…`)
+    : view.phase === 'roulette' ? (yourTurn ? "Color Roulette! Pick a color: you'll draw until it turns up" : `Color Roulette! ${current.name} is picking a color…`)
+    : you.out && !yourTurn ? `You're knocked out this round. ${current.name}'s turn`
     : yourTurn && pending > 0 && view.canChallenge && playableIds.size === 0 ? `+${pending} on you! Take the cards or challenge the +4`
     : yourTurn && pending > 0 && playableIds.size === 0 ? `Take ${pending} cards`
     : yourTurn && pending > 0 ? `Stack a draw card to pass it on, or take ${pending} cards`
@@ -260,10 +286,13 @@ export function GameTable({
     : `${current.name}'s turn`;
 
   return (
-    <div className={`table ${view.side === 'dark' ? 'table--dark' : ''}`}>
+    <CardThemeContext.Provider value={cardThemeFor(view.variantId)}>
+    <div className={`table ${view.side === 'dark' ? 'table--dark' : ''} ${noMercy ? 'table--nomercy' : ''}`}>
       <header className="table__header">
         <button type="button" className="btn btn--ghost btn--small" onClick={onExit}>{exitLabel}</button>
-        <span className="table__round">{pointsMode ? `Round ${view.round} · First to 500` : 'First out wins'}</span>
+        <span className="table__round">
+          {pointsMode ? `Round ${view.round} · First to ${view.pointsToWin.toLocaleString('en-US')}` : noMercy ? 'First out or last standing wins' : 'First out wins'}
+        </span>
         <span className="table__tools">
           {pointsMode && <span className="table__you-score">You: {view.scores[view.you]} pts</span>}
           <button type="button" className="icon-btn" onClick={() => setShowScores(true)} aria-label="Scores" title="Scores">🏆</button>
@@ -283,6 +312,7 @@ export function GameTable({
             isTurn={gameActive && view.currentPlayer === seat}
             canCatch={view.unoVulnerable === seat}
             score={pointsMode ? view.scores[seat]! : null}
+            mercyLimit={view.mercyLimit}
             away={awayIds?.has(p.id) ?? false}
             onCatch={() => run({ type: 'catchUno', target: seat })}
             elRef={(el) => {
@@ -369,7 +399,17 @@ export function GameTable({
             <button type="button" className="btn" onClick={() => run({ type: 'pass' })}>Keep card</button>
           )}
           {you.calledUno && view.hand.length === 1 && <span className="badge badge--uno">UNO!</span>}
+          {danger && (
+            <span className="badge badge--danger" title="The Mercy rule">
+              {view.hand.length}/{view.mercyLimit} cards: at {view.mercyLimit} you're out!
+            </span>
+          )}
         </div>
+        {you.out && gameActive && (
+          <p className="you__out" role="status">
+            💀 Knocked out! You hit {view.mercyLimit} cards, so you sit out the rest of this round.
+          </p>
+        )}
         {base && (
           <p className="you__hint">Tap your other {String(base.value)}s to play them too. The last one you pick sets the color.</p>
         )}
@@ -408,11 +448,33 @@ export function GameTable({
       <Flights flights={flights} onDone={(id) => setFlights((f) => f.filter((x) => x.id !== id))} />
       {showScores && <ScoreboardModal view={view} onClose={() => setShowScores(false)} />}
 
+      {picker?.kind === 'discard' && (
+        <ColorPicker
+          colors={sideColors}
+          title="Wild Discard All"
+          subtitle="Which color do you want to throw away? Every card of that color in your hand goes."
+          onCancel={() => setPicker(null)}
+          onPick={(discardColor) => submitPlay(picker.cardIds, undefined, undefined, discardColor)}
+        />
+      )}
       {picker?.kind === 'color' && (
-        <ColorPicker colors={sideColors} onCancel={() => setPicker(null)} onPick={(color) => submitPlay(picker.cardIds, color)} />
+        <ColorPicker
+          colors={sideColors}
+          {...(picker.discardColor ? { title: 'Now choose the color in play' } : {})}
+          onCancel={() => setPicker(null)}
+          onPick={(color) => submitPlay(picker.cardIds, color, undefined, picker.discardColor)}
+        />
       )}
       {yourTurn && view.phase === 'chooseColor' && (
         <ColorPicker colors={sideColors} title="A wild turned up: choose its color" onPick={(color) => run({ type: 'chooseColor', color })} />
+      )}
+      {yourTurn && view.phase === 'roulette' && (
+        <ColorPicker
+          colors={sideColors}
+          title="Color Roulette!"
+          subtitle="Pick a color. You'll flip cards from the deck until it turns up, and keep them all."
+          onPick={(color) => run({ type: 'chooseColor', color })}
+        />
       )}
       {picker?.kind === 'swap' && (
         <SwapPicker
@@ -426,6 +488,7 @@ export function GameTable({
         <RoundOver view={view} actions={endActions} note={endNote} nextRoundAt={nextRoundAt} />
       )}
     </div>
+    </CardThemeContext.Provider>
   );
 }
 

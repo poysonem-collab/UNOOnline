@@ -12,6 +12,14 @@ const VALUE_NAMES: Record<string, string> = {
   skipAll: 'Skip Everyone',
   wild2: 'Wild Draw Two',
   wildColor: 'Wild Draw Color',
+  draw4: 'Draw Four',
+  discardAll: 'Discard All',
+  wildRev4: 'Wild Reverse Draw 4',
+  wild6: 'Wild Draw 6',
+  wild10: 'Wild Draw 10',
+  roulette: 'Wild Color Roulette',
+  wildRev8: 'Wild Reverse Draw 8',
+  wildDiscardAll: 'Wild Discard All',
 };
 
 export function colorName(color: Color): string {
@@ -65,6 +73,14 @@ export function describeEvent(event: GameEvent, players: PlayerInfo[], you: numb
       return `${name(event.seat)} chose ${colorName(event.color)}`;
     case 'skippedEveryone':
       return `${name(event.seat)} skipped everyone and goes again`;
+    case 'playAgain':
+      return `${name(event.seat)} played a 10 and ${event.seat === you ? 'go' : 'goes'} again`;
+    case 'discardedAll':
+      return `${name(event.seat)} discarded ${event.count} more ${event.color} card${event.count === 1 ? '' : 's'}`;
+    case 'roulette':
+      return `${name(event.seat)} spun the Color Roulette (${colorName(event.color)}) and drew ${event.count}`;
+    case 'eliminated':
+      return `${name(event.seat)} hit the Mercy limit and ${event.seat === you ? 'are' : 'is'} OUT!`;
     case 'roundOver':
       return `${name(event.winner)} won the round (+${event.points} points)`;
     case 'gameOver':

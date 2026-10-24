@@ -1,4 +1,4 @@
-import { HAND_SIZES, needsTwoDecks, type RuleSet } from '@uno/shared';
+import { deckFor, getVariant, HAND_SIZES, needsTwoDecks, type RuleSet } from '@uno/shared';
 
 interface RulesPanelProps {
   /** Some rules read differently per game (UNO Flip has no 0s and its own draw cards). */
@@ -11,9 +11,14 @@ interface RulesPanelProps {
   readOnly?: boolean;
 }
 
-type HouseRule = 'stackDraws' | 'stackSameNumber' | 'sevenZero' | 'jumpIn' | 'drawUntilPlayable' | 'challengeWild4' | 'noActionFinish';
+type HouseRule = 'noMercyExpansion' | 'stackDraws' | 'stackSameNumber' | 'sevenZero' | 'jumpIn' | 'drawUntilPlayable' | 'challengeWild4' | 'noActionFinish';
 
 const HOUSE_RULES: { key: HouseRule; label: string; hint: string }[] = [
+  {
+    key: 'noMercyExpansion',
+    label: 'Expansion Pack cards',
+    hint: 'Shuffle in the No Mercy Expansion Pack: 10s (play again), Wild Discard All (throw away a color you pick) and Wild Reverse Draw 8.',
+  },
   { key: 'stackDraws', label: 'Stack +2 / +4', hint: 'Hit with a draw card? Play your own to pass the total on to the next player.' },
   { key: 'stackSameNumber', label: 'Stack same numbers', hint: 'Play several cards of the same number at once, in any colors.' },
   { key: 'sevenZero', label: '7-0', hint: 'Playing a 7 swaps hands with a player you choose. Playing a 0 passes every hand along.' },
@@ -30,10 +35,19 @@ const FLIP_RULES: Partial<Record<HouseRule, { label: string; hint: string }>> = 
   challengeWild4: { label: 'Challenge Wild Draw Two', hint: 'A Wild Draw Two is only allowed with no card of the current color. Challenge it: a bluffer draws the cards, otherwise you draw 2 extra.' },
 };
 
-export function RulesPanel({ variantId, rules, onChange, playerCount, online, readOnly }: RulesPanelProps) {
-  const houseRules = HOUSE_RULES.map((r) => (variantId === 'flip' ? { ...r, ...FLIP_RULES[r.key] } : r));
+/** UNO Show 'Em No Mercy wording for the rules that differ. */
+const NO_MERCY_RULES: Partial<Record<HouseRule, { label: string; hint: string }>> = {
+  stackSameNumber: { label: 'Stack same numbers', hint: 'Play several cards of the same number at once, in any colors. (Discard All already dumps a whole color.)' },
+};
+
+export function RulesPanel({ variantId = 'classic', rules, onChange, playerCount, online, readOnly }: RulesPanelProps) {
+  // Some games build rules in (No Mercy always stacks, for one), so the host can't change those.
+  const offered = getVariant(variantId).availableRules;
+  const wording = variantId === 'flip' ? FLIP_RULES : variantId === 'no-mercy' ? NO_MERCY_RULES : {};
+  const houseRules = HOUSE_RULES.filter((r) => offered.includes(r.key)).map((r) => ({ ...r, ...wording[r.key] }));
   const set = <K extends keyof RuleSet>(key: K, value: RuleSet[K]) => onChange({ ...rules, [key]: value });
-  const twoDecksRequired = needsTwoDecks(playerCount, rules.handSize);
+  const twoDecksRequired = needsTwoDecks(playerCount, rules.handSize, variantId);
+  const { pointsToWin } = deckFor(variantId);
 
   return (
     <fieldset className="rules" disabled={readOnly}>
@@ -50,7 +64,7 @@ export function RulesPanel({ variantId, rules, onChange, playerCount, online, re
         <span>Win by</span>
         <Segmented
           value={rules.winCondition}
-          options={[['firstOut', 'First out'], ['points500', '500 points']]}
+          options={[['firstOut', 'First out'], ['points500', `${pointsToWin.toLocaleString('en-US')} points`]]}
           onChange={(v) => set('winCondition', v)}
         />
       </div>
@@ -79,6 +93,12 @@ export function RulesPanel({ variantId, rules, onChange, playerCount, online, re
       )}
 
       <h3 className="rules__heading">House rules</h3>
+      {variantId === 'no-mercy' && (
+        <p className="rules__builtin">
+          Always on in No Mercy: stacking draw cards (equal or higher), 7-0, draw until you can play, and the
+          Mercy rule: anyone holding 25 or more cards is knocked out.
+        </p>
+      )}
       {houseRules.map(({ key, label, hint }) => (
         <div key={key}>
           <label className="toggle">

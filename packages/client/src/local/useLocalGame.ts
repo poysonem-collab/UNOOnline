@@ -74,7 +74,7 @@ export function useLocalGame(config: LocalGameConfig) {
 
   // Bots take their turns after a short pause so humans can follow.
   useEffect(() => {
-    if (state.phase !== 'playing' && state.phase !== 'playDrawn' && state.phase !== 'chooseColor') return;
+    if (state.phase !== 'playing' && state.phase !== 'playDrawn' && state.phase !== 'chooseColor' && state.phase !== 'roulette') return;
     const seat = state.currentPlayer;
     if (!state.players[seat]!.isBot) return;
     // Leave a longer window when someone forgot UNO, so they can be caught.
@@ -95,8 +95,8 @@ export function useLocalGame(config: LocalGameConfig) {
   useEffect(() => {
     const target = state.unoVulnerable;
     if (target === null) return;
-    const players = stateRef.current.players;
-    const catchers = players.map((_, i) => i).filter((i) => i !== target && players[i]!.isBot);
+    const { players, out } = stateRef.current;
+    const catchers = players.map((_, i) => i).filter((i) => i !== target && players[i]!.isBot && !out[i]);
     if (catchers.length === 0 || Math.random() >= BOT_CATCH_CHANCE[config.difficulty]) return;
     const catcher = catchers[Math.floor(Math.random() * catchers.length)]!;
     const timer = setTimeout(() => {

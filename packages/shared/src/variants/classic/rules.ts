@@ -1,6 +1,17 @@
 import type { Card, CardFace, CardValue, Color, GameState, PlayerView, RuleSet } from '../../types.js';
 
-const DRAW_AMOUNTS: Partial<Record<CardValue, number>> = { draw1: 1, draw2: 2, wild2: 2, wild4: 4, draw5: 5 };
+const DRAW_AMOUNTS: Partial<Record<CardValue, number>> = {
+  draw1: 1,
+  draw2: 2,
+  wild2: 2,
+  wild4: 4,
+  draw4: 4,
+  wildRev4: 4,
+  draw5: 5,
+  wildRev8: 8,
+  wild6: 6,
+  wild10: 10,
+};
 
 /** How many cards a draw card makes the next player take (0 for other cards). */
 export function drawAmount(card: CardFace): number {
@@ -107,8 +118,21 @@ export function playableIdsFromView(view: PlayerView): Set<string> {
   return new Set(cards.map((c) => c.id));
 }
 
-/** Seat `steps` places away from `from` in the current direction. */
+/** Seat `steps` places away from `from` in the current direction, skipping players who are out. */
 export function seatAfter(state: GameState, from: number, steps = 1): number {
   const n = state.players.length;
-  return (((from + steps * state.direction) % n) + n) % n;
+  const step = (steps < 0 ? -1 : 1) * state.direction;
+  let seat = from;
+  for (let moved = 0; moved < Math.abs(steps); moved++) {
+    for (let tries = 0; tries < n; tries++) {
+      seat = (((seat + step) % n) + n) % n;
+      if (!state.out[seat]) break;
+    }
+  }
+  return seat;
+}
+
+/** Players still in the round (No Mercy knocks players out). */
+export function activeSeats(state: GameState): number[] {
+  return state.players.map((_, i) => i).filter((i) => !state.out[i]);
 }

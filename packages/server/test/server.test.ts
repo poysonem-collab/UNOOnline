@@ -78,7 +78,7 @@ describe('lobby server', () => {
 
   it('rejects locked versions and blank names', async () => {
     const c = await client();
-    expect(await c.emitWithAck('room:create', { name: 'A', variantId: 'no-mercy' })).toMatchObject({ ok: false });
+    expect(await c.emitWithAck('room:create', { name: 'A', variantId: 'flex' })).toMatchObject({ ok: false });
     expect(await c.emitWithAck('room:create', { name: 'A', variantId: 'flip' })).toMatchObject({ ok: true, lobby: { variantId: 'flip' } });
     expect(await c.emitWithAck('room:create', { name: '   ', variantId: 'classic' })).toMatchObject({ ok: false });
   });
@@ -111,6 +111,22 @@ describe('lobby server', () => {
     }));
     const lobby = await update;
     expect(lobby.rules).toMatchObject({ handSize: 5, jumpIn: true, winCondition: 'points500', deckCount: 1, stackDraws: false });
+  });
+
+  it("keeps No Mercy's built-in rules on, and lets the host add the Expansion Pack", async () => {
+    const c = await client();
+    const joined = ok(await c.emitWithAck('room:create', { name: 'Host', variantId: 'no-mercy' }));
+    expect(joined.lobby.rules).toMatchObject({ stackDraws: true, sevenZero: true, drawUntilPlayable: true, noMercyExpansion: false });
+    const update = nextState(c, (l) => l.rules.noMercyExpansion);
+    ok(await c.emitWithAck('room:updateRules', { ...joined.lobby.rules, stackDraws: false, sevenZero: false, noMercyExpansion: true }));
+    expect((await update).rules).toMatchObject({ stackDraws: true, sevenZero: true, noMercyExpansion: true });
+
+    ok(await c.emitWithAck('room:addBot', { difficulty: 'expert' }));
+    const game = trackGame(c);
+    ok(await c.emitWithAck('room:start'));
+    await until(() => game.update !== null);
+    expect(game.update!.view).toMatchObject({ variantId: 'no-mercy', mercyLimit: 25, pointsToWin: 1000 });
+    expect(game.update!.view.hand).toHaveLength(7);
   });
 
   it('does not let guests change rules', async () => {

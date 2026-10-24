@@ -1,14 +1,14 @@
-import { DEFAULT_RULES, type Card, type Color, type GameState, type RuleSet } from '../src/index.js';
+import { DEFAULT_RULES, type Card, type Color, type GameState, type RuleSet, type WildValue } from '../src/index.js';
 
 let nextId = 0;
 
-/** Build a card from short notation: 'r5', 'gskip', 'breverse', 'ydraw2', 'wild', 'wild4'. */
+/** Build a card from short notation: 'r5', 'gskip', 'breverse', 'ydraw2', 'wild', 'wild4', 'wild10', 'roulette'. */
 export function c(spec: string): Card {
   const id = `t${nextId++}`;
-  if (spec === 'wild' || spec === 'wild4') return { id, color: 'wild', value: spec };
+  if (spec.startsWith('wild') || spec === 'roulette') return { id, color: 'wild', value: spec as WildValue };
   const color = ({ r: 'red', y: 'yellow', g: 'green', b: 'blue' } as const)[spec[0] as 'r'];
   const rest = spec.slice(1);
-  const value = /^\d$/.test(rest) ? (Number(rest) as 0) : (rest as 'skip' | 'reverse' | 'draw2');
+  const value = /^\d+$/.test(rest) ? (Number(rest) as 0) : (rest as 'skip' | 'reverse' | 'draw2');
   return { id, color, value };
 }
 
@@ -20,10 +20,11 @@ export function makeState(opts: {
   color?: Color;
   current?: number;
   rules?: Partial<RuleSet>;
+  variantId?: string;
 }): GameState {
   const top = c(opts.top);
   return {
-    variantId: 'classic',
+    variantId: opts.variantId ?? 'classic',
     rules: { ...DEFAULT_RULES, ...opts.rules },
     players: opts.hands.map((h, i) => ({
       id: `p${i}`,
@@ -51,6 +52,7 @@ export function makeState(opts: {
     history: [],
     voids: opts.hands.map(() => []),
     named: opts.hands.map(() => null),
+    out: opts.hands.map(() => false),
     rng: 42,
   };
 }

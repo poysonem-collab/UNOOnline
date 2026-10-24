@@ -94,7 +94,7 @@ export function Setup({ variantId, initialTab, initialCode, notice, onStart, onJ
   const startBots = () => {
     const trimmed = cleanName(name);
     saveName(trimmed);
-    onStart({ variantId, playerName: trimmed || 'You', botCount, difficulty, rules: rulesForPlayerCount(rules, playerCount) });
+    onStart({ variantId, playerName: trimmed || 'You', botCount, difficulty, rules: rulesForPlayerCount(rules, playerCount, variantId) });
   };
 
   const connect = async (label: string, request: (name: string) => Promise<JoinedRoom>) => {

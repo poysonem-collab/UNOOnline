@@ -7,7 +7,8 @@ export type Color = (typeof ALL_COLORS)[number];
 
 export type Side = 'light' | 'dark';
 
-export type NumberValue = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+/** 10 only comes in the UNO Show 'Em No Mercy Expansion Pack. */
+export type NumberValue = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type ActionValue =
   | 'skip'
   | 'reverse'
@@ -16,13 +17,24 @@ export type ActionValue =
   | 'draw1'
   | 'draw5'
   | 'flip'
-  | 'skipAll';
+  | 'skipAll'
+  // UNO Show 'Em No Mercy
+  | 'draw4'
+  | 'discardAll';
 export type WildValue =
   | 'wild'
   | 'wild4'
   // UNO Flip
   | 'wild2'
-  | 'wildColor';
+  | 'wildColor'
+  // UNO Show 'Em No Mercy
+  | 'wildRev4'
+  | 'wild6'
+  | 'wild10'
+  | 'roulette'
+  // No Mercy Expansion Pack
+  | 'wildRev8'
+  | 'wildDiscardAll';
 export type CardValue = NumberValue | ActionValue | WildValue;
 
 /** One printed face of a card. `dark` marks UNO Flip's dark side (it changes how wilds look). */
@@ -62,6 +74,8 @@ export interface RuleSet {
   challengeWild4: boolean;
   /** Your last card must be a number card. */
   noActionFinish: boolean;
+  /** UNO Show 'Em No Mercy: shuffle in the Expansion Pack cards (10s, Wild Discard All, Wild Reverse Draw 8). */
+  noMercyExpansion: boolean;
   handSize: number;
   turnTimerSeconds: 0 | 15 | 30 | 60;
   deckCount: 1 | 2;
@@ -77,6 +91,7 @@ export const DEFAULT_RULES: RuleSet = {
   drawUntilPlayable: false,
   challengeWild4: false,
   noActionFinish: false,
+  noMercyExpansion: false,
   handSize: 7,
   turnTimerSeconds: 0,
   deckCount: 1,
@@ -102,6 +117,8 @@ export type Phase =
   | 'playDrawn'
   /** UNO Flip: a flip turned up a wild, so the player who flipped picks the color. */
   | 'chooseColor'
+  /** No Mercy: Color Roulette was played on the current player, who picks a color to draw until. */
+  | 'roulette'
   /** Someone went out; scores are updated. */
   | 'roundOver'
   /** A player has won the whole game. */
@@ -146,6 +163,10 @@ export interface GameState {
   voids: Color[][];
   /** Per player, the color they last named with a wild (so they probably hold it). */
   named: (Color | null)[];
+  /** No Mercy: players knocked out this round by the Mercy rule (25+ cards). */
+  out: boolean[];
+  /** No Mercy: points of the hands knocked out this round, which go to the round's winner. */
+  mercyPoints?: number;
   /** Seeded RNG state so games are reproducible. */
   rng: number;
 }
@@ -158,7 +179,7 @@ export interface RoundResult {
 
 export type Action =
   /** With several cards (same-number stacking) the first must be playable; the last decides the color. */
-  | { type: 'play'; cardIds: string[]; color?: Color; swapWith?: number }
+  | { type: 'play'; cardIds: string[]; color?: Color; swapWith?: number; discardColor?: Color }
   /** Takes one card, or the pending penalty when one is waiting. */
   | { type: 'draw' }
   | { type: 'pass' }
@@ -186,6 +207,10 @@ export type GameEvent =
   | { type: 'flipped'; seat: number; side: Side }
   | { type: 'colorChosen'; seat: number; color: Color }
   | { type: 'skippedEveryone'; seat: number }
+  | { type: 'playAgain'; seat: number }
+  | { type: 'discardedAll'; seat: number; color: Color; count: number }
+  | { type: 'roulette'; seat: number; color: Color; count: number }
+  | { type: 'eliminated'; seat: number }
   | { type: 'roundOver'; winner: number; points: number }
   | { type: 'gameOver'; winner: number };
 
@@ -195,11 +220,14 @@ export type ActionResult =
 
 /** What one player is allowed to see. */
 export interface PlayerView {
+  variantId: string;
   you: number;
   hand: Card[];
   players: (PlayerInfo & {
     handCount: number;
     calledUno: boolean;
+    /** No Mercy: knocked out by the Mercy rule this round. */
+    out: boolean;
     /** UNO Flip: the backs of this player's cards, which you can see (not for your own hand). */
     otherSides?: CardFace[];
   })[];
@@ -222,6 +250,10 @@ export interface PlayerView {
   gameWinner: number | null;
   scores: number[];
   round: number;
+  /** Points needed to win a points game. */
+  pointsToWin: number;
+  /** No Mercy: a hand this big is knocked out (null when there's no such rule). */
+  mercyLimit: number | null;
   history: RoundResult[];
   /** Everyone's leftover cards, shown once a round is over. */
   revealedHands: Card[][] | null;

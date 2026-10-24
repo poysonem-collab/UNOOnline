@@ -217,7 +217,7 @@ export class GameRunner {
     const random = this.options.random;
     const jumpers = this.ids
       .map((_, seat) => seat)
-      .filter((seat) => this.state.players[seat]!.isBot && seat !== this.state.currentPlayer)
+      .filter((seat) => this.state.players[seat]!.isBot && seat !== this.state.currentPlayer && !this.state.out[seat])
       .filter((seat) => random() < BOT_JUMP_IN_CHANCE[this.difficulty[seat] ?? 'normal'])
       .filter((seat) => this.variant.chooseBotJumpIn(this.state, seat, 'normal', random) !== null);
     if (jumpers.length === 0) return;
@@ -233,12 +233,12 @@ export class GameRunner {
     }, (min * 0.6 + random() * (max - min)) * BOT_REACTION[level]);
   }
 
-  /** When the turn timer runs out: draw, and keep the card (or pick a color for them). */
+  /** When the turn timer runs out: draw, and keep the card (or pick a color for them, Roulette included). */
   private timeOut(): void {
     if (!this.isActive()) return;
     const seat = this.state.currentPlayer;
     const id = this.ids[seat]!;
-    if (this.state.phase === 'chooseColor') {
+    if (this.state.phase === 'chooseColor' || this.state.phase === 'roulette') {
       this.playForSeat(seat, 'normal');
     } else if (this.state.phase === 'playing') {
       const drew = this.variant.applyAction(this.state, seat, { type: 'draw' });
@@ -282,7 +282,7 @@ export class GameRunner {
   private scheduleCatch(events: GameEvent[]): void {
     const target = this.state.unoVulnerable;
     if (target === null || !events.some((e) => e.type === 'played')) return;
-    const catchers = this.ids.map((_, i) => i).filter((i) => i !== target && this.state.players[i]!.isBot);
+    const catchers = this.ids.map((_, i) => i).filter((i) => i !== target && this.state.players[i]!.isBot && !this.state.out[i]);
     if (catchers.length === 0) return;
     const catcher = catchers[Math.floor(this.options.random() * catchers.length)]!;
     const level = this.difficulty[catcher] ?? 'normal';
@@ -296,6 +296,7 @@ export class GameRunner {
   }
 
   private isActive(): boolean {
-    return this.state.phase === 'playing' || this.state.phase === 'playDrawn' || this.state.phase === 'chooseColor';
+    const { phase } = this.state;
+    return phase === 'playing' || phase === 'playDrawn' || phase === 'chooseColor' || phase === 'roulette';
   }
 }

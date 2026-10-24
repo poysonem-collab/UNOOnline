@@ -16,8 +16,8 @@ export const VARIANT_CATALOG: VariantListing[] = [
   {
     id: 'no-mercy',
     name: 'UNO Show ’Em No Mercy',
-    description: 'Brutal draw cards, forced stacking, and elimination at 25 cards.',
-    locked: true,
+    description: 'Brutal draw cards (+6, +10), stacking, Discard All, Color Roulette, and knockout at 25 cards.',
+    locked: false,
   },
   {
     id: 'flex',

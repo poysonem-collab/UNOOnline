@@ -1,15 +1,15 @@
 import { MAX_PLAYERS, type RuleSet } from './types.js';
+import { deckFor } from './variants/decks.js';
 import type { Variant } from './variants/Variant.js';
 
-const DECK_SIZE = 108;
 /** Fewer cards than this left after dealing means a second deck is needed. */
 const MIN_DRAW_PILE = 10;
 
 export const HAND_SIZES = [5, 6, 7, 8, 9, 10] as const;
 export const TURN_TIMERS = [0, 15, 30, 60] as const;
 
-export function needsTwoDecks(playerCount: number, handSize: number): boolean {
-  return playerCount * handSize >= DECK_SIZE - MIN_DRAW_PILE;
+export function needsTwoDecks(playerCount: number, handSize: number, variantId = 'classic'): boolean {
+  return playerCount * handSize >= deckFor(variantId).size - MIN_DRAW_PILE;
 }
 
 /**
@@ -40,7 +40,7 @@ export function sanitizeRules(variant: Variant, input: unknown): RuleSet {
 }
 
 /** The rules actually used to start a game with this many players. */
-export function rulesForPlayerCount(rules: RuleSet, playerCount: number): RuleSet {
+export function rulesForPlayerCount(rules: RuleSet, playerCount: number, variantId = 'classic'): RuleSet {
   if (playerCount > MAX_PLAYERS) throw new Error('Too many players');
-  return needsTwoDecks(playerCount, rules.handSize) ? { ...rules, deckCount: 2 } : rules;
+  return needsTwoDecks(playerCount, rules.handSize, variantId) ? { ...rules, deckCount: 2 } : rules;
 }

@@ -72,6 +72,7 @@ function makeFlipState(opts: {
     side: opts.side ?? 'light',
     voids: opts.hands.map(() => []),
     named: opts.hands.map(() => null),
+    out: opts.hands.map(() => false),
     rng: 9,
   };
 }

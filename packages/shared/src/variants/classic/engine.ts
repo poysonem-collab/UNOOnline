@@ -15,11 +15,11 @@ import {
   type RuleSet,
 } from '../../types.js';
 import { deckFor } from '../decks.js';
-import { canJumpIn, canPlay, contextOf, drawAmount, isPlayable, isWildDraw, seatAfter, topCard } from './rules.js';
+import { activeSeats, canJumpIn, canPlay, contextOf, drawAmount, isPlayable, isWildDraw, seatAfter, topCard } from './rules.js';
 
-// This engine runs classic UNO and UNO Flip; the deck config (see ../decks.ts) holds the differences.
+// This engine runs classic UNO, UNO Flip and UNO Show 'Em No Mercy; the deck config
+// (see ../decks.ts) holds the differences.
 
-const POINTS_TO_WIN = 500;
 /** Extra cards a failed +4 challenge costs the challenger. */
 const CHALLENGE_PENALTY = 2;
 
@@ -52,6 +52,7 @@ export function createGame(players: PlayerInfo[], rules: RuleSet, seed: number, 
     history: [],
     voids: players.map(() => []),
     named: players.map(() => null),
+    out: players.map(() => false),
     rng: seed >>> 0,
   };
   dealRound(state, []);
@@ -72,6 +73,7 @@ export function startNextRound(prev: GameState): ActionResult {
 export function applyAction(prev: GameState, seat: number, action: Action): ActionResult {
   if (!prev.players[seat]) return fail('No such seat');
   if (prev.phase === 'roundOver' || prev.phase === 'gameOver') return fail('The round is over');
+  if (prev.out[seat]) return fail("You're out of this round");
 
   const state = structuredClone(prev);
   const events: GameEvent[] = [];
@@ -81,7 +83,9 @@ export function applyAction(prev: GameState, seat: number, action: Action): Acti
 
 export function getPlayerView(state: GameState, seat: number): PlayerView {
   const twoSided = state.side !== undefined;
+  const deck = deckFor(state.variantId);
   return {
+    variantId: state.variantId,
     you: seat,
     // You hold your cards facing you, so you can't see their backs...
     hand: (state.players[seat]?.hand ?? []).map(({ other: _other, ...card }) => card as Card),
@@ -91,6 +95,7 @@ export function getPlayerView(state: GameState, seat: number): PlayerView {
       isBot: p.isBot,
       handCount: p.hand.length,
       calledUno: p.calledUno,
+      out: state.out[i]!,
       // ...but everyone else's backs face you.
       ...(twoSided && i !== seat ? { otherSides: p.hand.map((c) => c.other!) } : {}),
     })),
@@ -110,6 +115,8 @@ export function getPlayerView(state: GameState, seat: number): PlayerView {
     gameWinner: state.gameWinner,
     scores: state.scores,
     round: state.round,
+    pointsToWin: deck.pointsToWin,
+    mercyLimit: deck.mercyLimit,
     history: state.history,
     revealedHands: state.phase === 'roundOver' || state.phase === 'gameOver' ? state.players.map((p) => p.hand) : null,
     rules: state.rules,
@@ -150,14 +157,14 @@ function dispatch(state: GameState, seat: number, action: Action, events: GameEv
 function play(
   state: GameState,
   seat: number,
-  { cardIds, color: chosenColor, swapWith }: { cardIds: string[]; color?: Color; swapWith?: number },
+  { cardIds, color: chosenColor, swapWith, discardColor }: { cardIds: string[]; color?: Color; swapWith?: number; discardColor?: Color },
   events: GameEvent[],
 ): string | null {
   const { rules } = state;
   const player = state.players[seat]!;
   const jumpingIn = seat !== state.currentPlayer;
   if (jumpingIn && !rules.jumpIn) return 'It is not your turn';
-  if (state.phase === 'chooseColor') return jumpingIn ? 'It is not your turn' : 'Choose a color first';
+  if (state.phase === 'chooseColor' || state.phase === 'roulette') return jumpingIn ? 'It is not your turn' : 'Choose a color first';
 
   // Every card must be in your hand, once.
   if (cardIds.length === 0) return 'Choose a card to play';
@@ -198,12 +205,16 @@ function play(
   if (handAfter === 0 && rules.noActionFinish && typeof last.value !== 'number') {
     return 'Your last card has to be a number card';
   }
-  if (last.color === 'wild' && !chosenColor) return 'Choose a color for the wild card';
-  if (last.color === 'wild' && !colorsForSide(state.side).includes(chosenColor!)) return 'Choose one of the colors in play';
+  // Color Roulette is the exception: the next player picks its color.
+  const namesColor = last.color === 'wild' && last.value !== 'roulette';
+  if (namesColor && !chosenColor) return 'Choose a color for the wild card';
+  if (namesColor && !colorsForSide(state.side).includes(chosenColor!)) return 'Choose one of the colors in play';
+  const discardsColor = last.value === 'wildDiscardAll';
+  if (discardsColor && (!discardColor || !colorsForSide(state.side).includes(discardColor))) return 'Choose a color to discard';
 
   const swaps = rules.sevenZero && last.value === 7 && handAfter > 0;
   if (swaps) {
-    if (swapWith === undefined || swapWith === seat || !state.players[swapWith]) {
+    if (swapWith === undefined || swapWith === seat || !state.players[swapWith] || state.out[swapWith]) {
       return 'Choose a player to swap hands with';
     }
   }
@@ -218,8 +229,9 @@ function play(
   state.discardPile.push(...cards);
   for (const c of cards) if (c.color !== 'wild') state.voids[seat] = state.voids[seat]!.filter((v) => v !== c.color);
   // Naming a color with a wild tells everyone you probably hold it.
-  if (last.color === 'wild') state.named[seat] = chosenColor!;
-  state.currentColor = last.color === 'wild' ? chosenColor! : last.color;
+  if (namesColor) state.named[seat] = chosenColor!;
+  if (last.color !== 'wild') state.currentColor = last.color;
+  else if (namesColor) state.currentColor = chosenColor!;
   state.phase = 'playing';
   state.drawnCardId = null;
   if (jumpingIn) {
@@ -228,9 +240,9 @@ function play(
   }
   events.push({ type: 'played', seat, cards, color: state.currentColor });
 
-  // An UNO call only counts for the play that brings you down to one card.
+  const handsMoved = applyEffect(state, seat, last, { swapWith, wild4Illegal, colorBefore, discardColor }, events);
+  // An UNO call only counts for the play that brings you down to one card (a Discard All may do that too).
   if (player.hand.length > 1) player.calledUno = false;
-  const handsMoved = applyEffect(state, seat, last, { swapWith, wild4Illegal, colorBefore }, events);
   if (!handsMoved && player.hand.length === 1 && !player.calledUno) state.unoVulnerable = seat;
   if (player.hand.length === 0) endRound(state, seat, events);
   return null;
@@ -244,7 +256,7 @@ function applyEffect(
   state: GameState,
   seat: number,
   card: Card,
-  extra: { swapWith?: number; wild4Illegal: boolean; colorBefore: Color },
+  extra: { swapWith?: number; wild4Illegal: boolean; colorBefore: Color; discardColor?: Color },
   events: GameEvent[],
 ): boolean {
   const { rules } = state;
@@ -266,7 +278,7 @@ function applyEffect(
     case 'reverse':
       state.direction = state.direction === 1 ? -1 : 1;
       events.push({ type: 'reversed', direction: state.direction });
-      if (state.players.length === 2) {
+      if (activeSeats(state).length === 2) {
         // With two players a reverse acts as a skip: the same player goes again.
         events.push({ type: 'skipped', seat: next });
         state.currentPlayer = seat;
@@ -275,33 +287,59 @@ function applyEffect(
       }
       return false;
 
+    case 'wildRev4':
+    case 'wildRev8':
+      // No Mercy: reverse first, then the new next player takes 4 (or 8).
+      state.direction = state.direction === 1 ? -1 : 1;
+      events.push({ type: 'reversed', direction: state.direction });
+      drawEffect(state, seat, card, extra, events);
+      return false;
+
     case 'draw1':
     case 'draw2':
+    case 'draw4':
     case 'draw5':
     case 'wild2':
-    case 'wild4': {
-      const amount = drawAmount(card);
-      const responds = rules.stackDraws || (isWildDraw(card) && rules.challengeWild4);
-      if (responds) {
-        // The next player can stack, challenge, or take the cards.
-        state.pendingDraw += amount;
-        state.wild4Check = isWildDraw(card) ? { seat, illegal: extra.wild4Illegal, colorBefore: extra.colorBefore } : null;
-        state.currentPlayer = next;
-        events.push({ type: 'drawStacked', total: state.pendingDraw, next });
-      } else {
-        drawCards(state, next, amount, events);
-        events.push({ type: 'skipped', seat: next });
-        state.currentPlayer = seatAfter(state, seat, 2);
-      }
+    case 'wild4':
+    case 'wild6':
+    case 'wild10':
+      drawEffect(state, seat, card, extra, events);
       return false;
-    }
 
     case 'wildColor': {
       // The next player draws until they get the chosen color, and loses their turn.
       const color = state.currentColor;
+      const land = seatAfter(state, seat, 2);
       drawUntil(state, next, (c) => c.color === color, events);
       events.push({ type: 'skipped', seat: next });
-      state.currentPlayer = seatAfter(state, seat, 2);
+      state.currentPlayer = land;
+      return false;
+    }
+
+    case 'roulette':
+      // No Mercy: the next player picks a color, then draws until they reveal it.
+      state.phase = 'roulette';
+      state.currentPlayer = next;
+      return false;
+
+    case 10:
+      // No Mercy Expansion: a 10 is a number card that lets you play again.
+      events.push({ type: 'playAgain', seat });
+      state.currentPlayer = seat;
+      return false;
+
+    case 'discardAll':
+    case 'wildDiscardAll': {
+      // No Mercy: every other card of this color goes too (under the Discard All, which stays on top).
+      // The Expansion's Wild Discard All names the color to throw away (and then the color in play).
+      const color = card.value === 'wildDiscardAll' ? extra.discardColor! : (card.color as Color);
+      const same = player.hand.filter((c) => c.color === color);
+      if (same.length) {
+        player.hand = player.hand.filter((c) => c.color !== color);
+        state.discardPile.splice(state.discardPile.length - 1, 0, ...same);
+        events.push({ type: 'discardedAll', seat, color, count: same.length });
+      }
+      state.currentPlayer = next;
       return false;
     }
 
@@ -331,6 +369,26 @@ function applyEffect(
   }
 }
 
+/** A draw card: the next player takes the cards and loses their turn, or (when stacking or challenging) gets to respond. */
+function drawEffect(state: GameState, seat: number, card: Card, extra: { wild4Illegal: boolean; colorBefore: Color }, events: GameEvent[]): void {
+  const { rules } = state;
+  const next = seatAfter(state, seat);
+  const amount = drawAmount(card);
+  if (rules.stackDraws || (isWildDraw(card) && rules.challengeWild4)) {
+    // The next player can stack, challenge, or take the cards.
+    state.pendingDraw += amount;
+    state.wild4Check = isWildDraw(card) ? { seat, illegal: extra.wild4Illegal, colorBefore: extra.colorBefore } : null;
+    state.currentPlayer = next;
+    events.push({ type: 'drawStacked', total: state.pendingDraw, next });
+  } else {
+    // Work out who plays next before drawing: the victim might be knocked out by the Mercy rule.
+    const land = seatAfter(state, seat, 2);
+    drawCards(state, next, amount, events);
+    events.push({ type: 'skipped', seat: next });
+    state.currentPlayer = land;
+  }
+}
+
 /** UNO Flip: every card everywhere turns over, so the other side is in play. */
 function flipEverything(state: GameState, seat: number, events: GameEvent[]): void {
   const turnOver = (card: Card): Card => ({ ...(card.other as CardFace), id: card.id, other: stripOther(card) }) as Card;
@@ -355,9 +413,20 @@ function stripOther(card: Card): CardFace {
 
 function chooseColor(state: GameState, seat: number, color: Color, events: GameEvent[]): string | null {
   if (seat !== state.currentPlayer) return 'It is not your turn';
-  if (state.phase !== 'chooseColor') return 'There is no color to choose';
+  if (state.phase !== 'chooseColor' && state.phase !== 'roulette') return 'There is no color to choose';
   if (!colorsForSide(state.side).includes(color)) return 'Choose one of the colors in play';
   state.currentColor = color;
+  if (state.phase === 'roulette') {
+    // Color Roulette: reveal cards until that color turns up; keep them all, and lose the turn.
+    state.phase = 'playing';
+    const land = seatAfter(state, seat);
+    // The spin is announced before what it caused (the draw, maybe a knockout).
+    const at = events.length;
+    const drawn = drawUntil(state, seat, (c) => c.color === color, events);
+    events.splice(at, 0, { type: 'roulette', seat, color, count: drawn.length });
+    if (!isOver(state)) state.currentPlayer = land;
+    return null;
+  }
   state.phase = 'playing';
   state.currentPlayer = seatAfter(state, seat);
   events.push({ type: 'colorChosen', seat, color });
@@ -378,21 +447,24 @@ function swapHands(state: GameState, a: number, b: number): void {
   pb.calledUno = false;
 }
 
-/** Every hand moves one seat along in the direction of play. */
+/** Every hand moves one seat along in the direction of play (among players still in). */
 function rotateHands(state: GameState): void {
   const hands = state.players.map((p) => p.hand);
-  const { voids, named } = state;
+  const voids = [...state.voids];
+  const named = [...state.named];
   state.players.forEach((p, i) => {
-    p.hand = hands[seatAfter(state, i, -1)]!;
+    if (state.out[i]) return;
+    const from = seatAfter(state, i, -1);
+    p.hand = hands[from]!;
     p.calledUno = false;
+    state.voids[i] = voids[from]!;
+    state.named[i] = named[from]!;
   });
-  state.voids = state.players.map((_, i) => voids[seatAfter(state, i, -1)]!);
-  state.named = state.players.map((_, i) => named[seatAfter(state, i, -1)]!);
 }
 
 function draw(state: GameState, seat: number, events: GameEvent[]): string | null {
   if (seat !== state.currentPlayer) return 'It is not your turn';
-  if (state.phase === 'chooseColor') return 'Choose a color first';
+  if (state.phase === 'chooseColor' || state.phase === 'roulette') return 'Choose a color first';
   if (state.phase !== 'playing') return 'You already drew this turn';
   state.unoVulnerable = null;
 
@@ -401,9 +473,12 @@ function draw(state: GameState, seat: number, events: GameEvent[]): string | nul
 
   // Taking the stacked penalty ends your turn.
   if (state.pendingDraw > 0) {
-    drawCards(state, seat, state.pendingDraw, events);
+    // Cleared first: taking the cards might knock this player out and end the round.
+    const penalty = state.pendingDraw;
     state.pendingDraw = 0;
     state.wild4Check = null;
+    drawCards(state, seat, penalty, events);
+    if (isOver(state)) return null;
     events.push({ type: 'skipped', seat });
     state.currentPlayer = seatAfter(state, seat);
     return null;
@@ -412,6 +487,12 @@ function draw(state: GameState, seat: number, events: GameEvent[]): string | nul
   const drawn = state.rules.drawUntilPlayable
     ? drawUntil(state, seat, (c) => isPlayable(state, c), events)
     : drawCards(state, seat, 1, events);
+  if (isOver(state)) return null;
+  if (state.out[seat]) {
+    // Drew their way past the Mercy limit.
+    state.currentPlayer = seatAfter(state, seat);
+    return null;
+  }
   const card = drawn[drawn.length - 1];
   if (card && isPlayable(state, card)) {
     state.phase = 'playDrawn';
@@ -455,8 +536,9 @@ function challenge(state: GameState, seat: number, events: GameEvent[]): string 
 
 function callUno(state: GameState, seat: number, events: GameEvent[]): string | null {
   const player = state.players[seat]!;
-  // Playing several cards at once can take you from many cards straight to one.
-  if (player.hand.length > 2 && !state.rules.stackSameNumber) return 'You can only call UNO with two cards or fewer';
+  // Playing several cards at once (or a Discard All) can take you from many cards straight to one.
+  const bigPlays = state.rules.stackSameNumber || state.variantId === 'no-mercy';
+  if (player.hand.length > 2 && !bigPlays) return 'You can only call UNO with two cards or fewer';
   player.calledUno = true;
   if (state.unoVulnerable === seat) state.unoVulnerable = null;
   events.push({ type: 'calledUno', seat });
@@ -509,8 +591,34 @@ function giveCards(state: GameState, seat: number, cards: Card[], events: GameEv
   player.hand.push(...cards);
   // A handful of new cards means what we noticed about this player may no longer hold.
   if (cards.length >= 2) state.voids[seat] = [];
+  const limit = deckFor(state.variantId).mercyLimit;
   player.calledUno = false;
   events.push({ type: 'drew', seat, count: cards.length });
+  if (limit !== null && player.hand.length >= limit) eliminate(state, seat, events);
+}
+
+/** No Mercy's Mercy rule: a hand this big is out of the round; the cards go back into the deck. */
+function eliminate(state: GameState, seat: number, events: GameEvent[]): void {
+  const player = state.players[seat]!;
+  // The cards still count against them: whoever wins the round scores them.
+  const cardPoints = deckFor(state.variantId).points;
+  state.mercyPoints = (state.mercyPoints ?? 0) + player.hand.reduce((s, c) => s + cardPoints(c), 0);
+  state.drawPile.unshift(...player.hand);
+  state.rng = shuffle(state.drawPile, state.rng);
+  player.hand = [];
+  player.calledUno = false;
+  state.out[seat] = true;
+  state.voids[seat] = [];
+  state.named[seat] = null;
+  if (state.unoVulnerable === seat) state.unoVulnerable = null;
+  events.push({ type: 'eliminated', seat });
+  // Last one standing wins the round.
+  const left = activeSeats(state);
+  if (left.length === 1 && state.roundWinner === null) endRound(state, left[0]!, events);
+}
+
+function isOver(state: GameState): boolean {
+  return state.phase === 'roundOver' || state.phase === 'gameOver';
 }
 
 function reshuffle(state: GameState, events: GameEvent[]): void {
@@ -523,24 +631,26 @@ function reshuffle(state: GameState, events: GameEvent[]): void {
 }
 
 function endRound(state: GameState, winner: number, events: GameEvent[]): void {
+  // Set first: the drawing below may knock someone out, which must not end the round again.
+  state.roundWinner = winner;
   // Going out on a draw card still makes the next player draw (it counts for scoring).
   if (state.pendingDraw > 0) {
     drawCards(state, state.currentPlayer, state.pendingDraw, events);
     state.pendingDraw = 0;
     state.wild4Check = null;
   }
-  const { points: cardPoints } = deckFor(state.variantId);
+  const { points: cardPoints, pointsToWin } = deckFor(state.variantId);
+  // The winner scores the cards left in everyone else's hand (a last player standing may still hold some).
   const points = state.players.reduce(
-    (sum, p) => sum + p.hand.reduce((s, c) => s + cardPoints(c), 0),
-    0,
+    (sum, p, i) => (i === winner ? sum : sum + p.hand.reduce((s, c) => s + cardPoints(c), 0)),
+    state.mercyPoints ?? 0,
   );
   state.scores[winner]! += points;
   state.history.push({ round: state.round, winner, points });
-  state.roundWinner = winner;
   state.unoVulnerable = null;
   events.push({ type: 'roundOver', winner, points });
 
-  const gameWon = state.rules.winCondition === 'firstOut' || state.scores[winner]! >= POINTS_TO_WIN;
+  const gameWon = state.rules.winCondition === 'firstOut' || state.scores[winner]! >= pointsToWin;
   if (gameWon) {
     state.phase = 'gameOver';
     state.gameWinner = winner;
@@ -553,7 +663,7 @@ function endRound(state: GameState, winner: number, events: GameEvent[]): void {
 /** Shuffles a fresh deck, deals, and flips the starting card. */
 function dealRound(state: GameState, events: GameEvent[]): void {
   const config = deckFor(state.variantId);
-  const [deck, rng] = config.build(state.rules.deckCount, state.rng);
+  const [deck, rng] = config.build(state.rules.deckCount, state.rng, state.rules);
   state.rng = shuffle(deck, rng);
   // Two-sided decks are built light side up.
   if (deck[0]?.other) state.side = 'light';
@@ -568,6 +678,8 @@ function dealRound(state: GameState, events: GameEvent[]): void {
   state.roundWinner = null;
   state.voids = state.players.map(() => []);
   state.named = state.players.map(() => null);
+  state.out = state.players.map(() => false);
+  state.mercyPoints = 0;
   for (const p of state.players) {
     p.hand = [];
     p.calledUno = false;

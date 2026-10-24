@@ -6,6 +6,8 @@ interface OpponentProps {
   isTurn: boolean;
   canCatch: boolean;
   score: number | null;
+  /** No Mercy: a hand this big is knocked out (null in other games). */
+  mercyLimit?: number | null;
   /** Disconnected right now. */
   away?: boolean;
   onCatch: () => void;
@@ -14,11 +16,15 @@ interface OpponentProps {
 }
 
 const MAX_FAN = 8;
+/** No Mercy: show a hand this close to the Mercy limit in red. */
+const DANGER_MARGIN = 5;
 
-export function Opponent({ player, isTurn, canCatch, score, away, onCatch, elRef }: OpponentProps) {
+export function Opponent({ player, isTurn, canCatch, score, mercyLimit = null, away, onCatch, elRef }: OpponentProps) {
   const fan = Math.min(player.handCount, MAX_FAN);
+  const danger = mercyLimit !== null && !player.out && player.handCount >= mercyLimit - DANGER_MARGIN;
+  const classes = ['opponent', isTurn ? 'opponent--turn' : '', away ? 'opponent--away' : '', player.out ? 'opponent--out' : ''];
   return (
-    <div ref={elRef} className={`opponent ${isTurn ? 'opponent--turn' : ''} ${away ? 'opponent--away' : ''}`}>
+    <div ref={elRef} className={classes.join(' ')}>
       <div className="opponent__top">
         <span className="opponent__avatar" aria-hidden>{player.isBot ? '🤖' : player.name[0]?.toUpperCase()}</span>
         <span className="opponent__name">{player.name}</span>
@@ -30,8 +36,9 @@ export function Opponent({ player, isTurn, canCatch, score, away, onCatch, elRef
             ? player.otherSides.slice(0, MAX_FAN).map((face, i) => <Card key={i} card={face} className="card--mini" />)
             : Array.from({ length: fan }, (_, i) => <CardBack key={i} className="card--mini" />)}
         </div>
-        <span className="opponent__count">{player.handCount}</span>
+        <span className={`opponent__count ${danger ? 'opponent__count--danger' : ''}`}>{player.handCount}</span>
       </div>
+      {player.out && <span className="tag tag--out">Knocked out</span>}
       {score !== null && <span className="opponent__score">{score} pts</span>}
       {away && <span className="tag tag--away">Away</span>}
       {player.calledUno && player.handCount === 1 && <span className="badge badge--uno">UNO!</span>}

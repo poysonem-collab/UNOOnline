@@ -208,7 +208,7 @@ export class RoomManager {
     }
     room.start(playerId);
     const variant = getVariant(room.variantId);
-    const rules = rulesForPlayerCount(room.rules, room.seats.length);
+    const rules = rulesForPlayerCount(room.rules, room.seats.length, room.variantId);
     const seats = room.seats.map(({ id, name, isBot, difficulty }) => ({ id, name, isBot, difficulty }));
     const game = new GameRunner(
       variant,

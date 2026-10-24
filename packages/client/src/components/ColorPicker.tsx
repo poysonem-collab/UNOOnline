@@ -8,13 +8,15 @@ interface ColorPickerProps {
   /** The colors in play; UNO Flip's dark side has its own. */
   colors?: readonly Color[];
   title?: string;
+  subtitle?: string;
 }
 
-export function ColorPicker({ onPick, onCancel, colors = COLORS, title = 'Choose a color' }: ColorPickerProps) {
+export function ColorPicker({ onPick, onCancel, colors = COLORS, title = 'Choose a color', subtitle }: ColorPickerProps) {
   return (
     <div className="modal" role="dialog" aria-label="Choose a color" onClick={onCancel}>
       <div className="modal__box" onClick={(e) => e.stopPropagation()}>
         <h2>{title}</h2>
+        {subtitle && <p className="hint">{subtitle}</p>}
         <div className="color-picker">
           {colors.map((color) => (
             <button
