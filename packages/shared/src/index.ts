@@ -11,7 +11,7 @@ export type { Variant, BotDifficulty } from './variants/Variant.js';
 export { classic } from './variants/classic/index.js';
 export { BOT_CATCH_CHANCE } from './variants/classic/bot.js';
 export { buildClassicDeck, cardPoints } from './variants/classic/deck.js';
-export { canPlayOn } from './variants/classic/rules.js';
+export { canPlayOn, playableIdsFromView } from './variants/classic/rules.js';
 
 export const VARIANTS: Record<string, Variant> = {
   [classic.id]: classic,

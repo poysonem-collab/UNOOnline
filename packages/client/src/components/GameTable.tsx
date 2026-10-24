@@ -1,19 +1,48 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { colorName, describeCard, type Action, type Card as CardData, type PlayerView } from '@uno/shared';
 import { Card, CardBack, CARD_COLORS } from './Card';
 import { ColorPicker } from './ColorPicker';
 import { Opponent } from './Opponent';
 import type { LogEntry } from '../local/useLocalGame';
 
+export interface EndAction {
+  label: string;
+  onClick: () => void;
+  primary?: boolean;
+}
+
 interface GameTableProps {
   view: PlayerView;
   log: LogEntry[];
   playableIds: Set<string>;
-  /** Returns an error message, or null on success. */
-  onAction: (action: Action) => string | null;
-  onNextRound: () => void;
-  onRestart: () => void;
+  /** Returns (or resolves to) an error message, or null on success. */
+  onAction: (action: Action) => string | null | Promise<string | null>;
+  /** Buttons on the round-over / game-over screen. */
+  endActions: EndAction[];
+  /** Extra line on that screen, e.g. "Waiting for the host". */
+  endNote?: string;
   onExit: () => void;
+  exitLabel?: string;
+  /** Local clock time when the current turn timer runs out. */
+  turnEndsAt?: number | null;
+  /** Local clock time when the next round starts by itself. */
+  nextRoundAt?: number | null;
+  /** Players who are disconnected right now. */
+  awayIds?: Set<string>;
+  /** Banner across the top, e.g. connection problems. */
+  notice?: string | null;
+}
+
+/** Whole seconds until `deadline`, updating while it counts down. */
+function useCountdown(deadline: number | null | undefined): number | null {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!deadline) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, [deadline]);
+  return deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null;
 }
 
 const COLOR_ORDER = ['red', 'yellow', 'green', 'blue', 'wild'];
@@ -34,8 +63,13 @@ function tilt(id: string): number {
   return (h % 25) - 12;
 }
 
-export function GameTable({ view, log, playableIds, onAction, onNextRound, onRestart, onExit }: GameTableProps) {
+export function GameTable({
+  view, log, playableIds, onAction, endActions, endNote, onExit, exitLabel = '← Menu',
+  turnEndsAt, nextRoundAt, awayIds, notice,
+}: GameTableProps) {
   const [pendingWild, setPendingWild] = useState<string | null>(null);
+  const sending = useRef(false);
+  const secondsLeft = useCountdown(turnEndsAt);
   const [error, setError] = useState<string | null>(null);
   const [pile, setPile] = useState<CardData[]>([view.topCard]);
 
@@ -62,9 +96,14 @@ export function GameTable({ view, log, playableIds, onAction, onNextRound, onRes
     .slice(view.you + 1)
     .concat(view.players.map((p, seat) => ({ p, seat })).slice(0, view.you));
 
+  // Ignore taps while a move is on its way to the server, so a double-tap can't send it twice.
   const run = (action: Action) => {
-    const err = onAction(action);
-    if (err) setError(err);
+    if (sending.current) return;
+    sending.current = true;
+    void Promise.resolve(onAction(action)).then((err) => {
+      sending.current = false;
+      if (err) setError(err);
+    });
   };
 
   const playCard = (card: CardData) => {
@@ -78,15 +117,19 @@ export function GameTable({ view, log, playableIds, onAction, onNextRound, onRes
     !gameActive ? ''
     : yourTurn && view.phase === 'playDrawn' ? 'Play the card you drew, or keep it'
     : yourTurn ? 'Your turn: play a card or draw'
-    : `${current.name} is thinking…`;
+    : awayIds?.has(current.id) ? `Waiting for ${current.name} to reconnect…`
+    : current.isBot ? `${current.name} is thinking…`
+    : `${current.name}'s turn`;
 
   return (
     <div className="table">
       <header className="table__header">
-        <button type="button" className="btn btn--ghost btn--small" onClick={onExit}>← Menu</button>
+        <button type="button" className="btn btn--ghost btn--small" onClick={onExit}>{exitLabel}</button>
         <span className="table__round">{pointsMode ? `Round ${view.round} · First to 500` : 'First out wins'}</span>
         <span className="table__you-score">{pointsMode ? `You: ${view.scores[view.you]} pts` : ''}</span>
       </header>
+
+      {notice && <div className="table__notice" role="status">{notice}</div>}
 
       <section className="opponents">
         {opponents.map(({ p, seat }) => (
@@ -96,6 +139,7 @@ export function GameTable({ view, log, playableIds, onAction, onNextRound, onRes
             isTurn={gameActive && view.currentPlayer === seat}
             canCatch={view.unoVulnerable === seat}
             score={pointsMode ? view.scores[seat]! : null}
+            away={awayIds?.has(p.id) ?? false}
             onCatch={() => run({ type: 'catchUno', target: seat })}
           />
         ))}
@@ -130,7 +174,12 @@ export function GameTable({ view, log, playableIds, onAction, onNextRound, onRes
       </section>
 
       <section className="status" aria-live="polite">
-        <div className={`status__turn ${yourTurn ? 'status__turn--you' : ''}`}>{status}</div>
+        <div className={`status__turn ${yourTurn ? 'status__turn--you' : ''}`}>
+          {status}
+          {gameActive && secondsLeft !== null && (
+            <span className={`timer ${secondsLeft <= 5 ? 'timer--urgent' : ''}`} aria-label={`${secondsLeft} seconds left`}>{secondsLeft}s</span>
+          )}
+        </div>
         <ul className="log">
           {log.slice(-3).map((entry) => <li key={entry.id}>{entry.text}</li>)}
         </ul>
@@ -175,14 +224,15 @@ export function GameTable({ view, log, playableIds, onAction, onNextRound, onRes
       )}
 
       {(view.phase === 'roundOver' || view.phase === 'gameOver') && (
-        <RoundOver view={view} onNextRound={onNextRound} onRestart={onRestart} onExit={onExit} />
+        <RoundOver view={view} actions={endActions} note={endNote} nextRoundAt={nextRoundAt} />
       )}
     </div>
   );
 }
 
-function RoundOver({ view, onNextRound, onRestart, onExit }: Pick<GameTableProps, 'view' | 'onNextRound' | 'onRestart' | 'onExit'>) {
+function RoundOver({ view, actions, note, nextRoundAt }: { view: PlayerView; actions: EndAction[]; note?: string; nextRoundAt?: number | null }) {
   const gameOver = view.phase === 'gameOver';
+  const nextIn = useCountdown(gameOver ? null : nextRoundAt);
   const winnerSeat = gameOver ? view.gameWinner! : view.roundWinner!;
   const winner = winnerSeat === view.you ? 'You' : view.players[winnerSeat]!.name;
   const standings = view.players
@@ -206,13 +256,14 @@ function RoundOver({ view, onNextRound, onRestart, onExit }: Pick<GameTableProps
             ))}
           </tbody>
         </table>
+        {nextIn !== null && <p className="modal__note">Next round starts in {nextIn}s</p>}
+        {note && <p className="modal__note">{note}</p>}
         <div className="modal__actions">
-          {gameOver ? (
-            <button type="button" className="btn btn--primary" onClick={onRestart}>Play again</button>
-          ) : (
-            <button type="button" className="btn btn--primary" onClick={onNextRound}>Next round</button>
-          )}
-          <button type="button" className="btn btn--ghost" onClick={onExit}>Menu</button>
+          {actions.map((a) => (
+            <button key={a.label} type="button" className={`btn ${a.primary ? 'btn--primary' : 'btn--ghost'}`} onClick={a.onClick}>
+              {a.label}
+            </button>
+          ))}
         </div>
       </div>
     </div>

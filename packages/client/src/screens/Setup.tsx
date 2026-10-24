@@ -16,7 +16,7 @@ import { RulesPanel, Segmented } from '../components/RulesPanel';
 import type { LocalGameConfig } from '../local/useLocalGame';
 import { api, ONLINE_AVAILABLE } from '../net/socket';
 import { clearSession, loadName, loadSession, saveName } from '../net/session';
-import { rememberRoom } from '../online/useLobby';
+import { rememberRoom } from '../online/useRoom';
 
 export type SetupTab = 'bots' | 'friends';
 

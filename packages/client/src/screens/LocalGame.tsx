@@ -3,6 +3,12 @@ import { useLocalGame, type LocalGameConfig } from '../local/useLocalGame';
 
 export function LocalGame({ config, onExit }: { config: LocalGameConfig; onExit: () => void }) {
   const game = useLocalGame(config);
+  const menu = { label: 'Menu', onClick: onExit };
+  const endActions =
+    game.view.phase === 'gameOver'
+      ? [{ label: 'Play again', onClick: game.restart, primary: true }, menu]
+      : [{ label: 'Next round', onClick: game.nextRound, primary: true }, menu];
+
   return (
     <GameTable
       key={game.dealKey}
@@ -10,8 +16,7 @@ export function LocalGame({ config, onExit }: { config: LocalGameConfig; onExit:
       log={game.log}
       playableIds={game.playableIds}
       onAction={game.act}
-      onNextRound={game.nextRound}
-      onRestart={game.restart}
+      endActions={endActions}
       onExit={onExit}
     />
   );

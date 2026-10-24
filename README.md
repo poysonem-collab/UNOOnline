@@ -37,6 +37,14 @@ so one link does everything.
 
 Render redeploys automatically on every push to `main`.
 
+How online games handle problems:
+
+- **Refresh or dropped connection:** you rejoin automatically, with your cards. If you're gone for
+  more than 20 seconds, a bot plays your turns until you're back.
+- **Leaving mid-game:** a bot takes over your seat for the rest of the game.
+- **Turn timer:** when it runs out, you draw a card and play moves on.
+- **Everyone leaves:** the room closes 5 minutes after the last person disconnects.
+
 On the free plan the server falls asleep after 15 minutes without visitors. The next visit wakes it
 up, which takes up to a minute. Rooms only live in memory, so a restart or redeploy closes open rooms.
 
@@ -55,7 +63,7 @@ To enable online play on the Pages copy too, edit `.github/workflows/deploy.yml`
 |---|---|
 | `packages/shared` | Game rules, deck, bots, and the messages between browser and server |
 | `packages/client` | The website (React) |
-| `packages/server` | The game server (Node.js + Socket.IO): rooms, lobbies, and soon online games |
+| `packages/server` | The game server (Node.js + Socket.IO): rooms, lobbies and online games |
 
 ## Commands
 
@@ -72,7 +80,7 @@ To enable online play on the Pages copy too, edit `.github/workflows/deploy.yml`
 - [x] Step 1: Rules engine with tests
 - [x] Step 2: Play against bots in the browser
 - [x] Step 3: Lobby with room codes, invite links and host rules
-- [ ] Step 4: Online games
+- [x] Step 4: Online games (friends and bots together, turn timer, rejoin after refresh)
 - [ ] Step 5: House rules (stacking, 7-0, jump-in, draw until playable)
 - [ ] Step 6: Polish (sounds, turn timer, scoreboard)
 - [ ] Step 7: Hosting polish

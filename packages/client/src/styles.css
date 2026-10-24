@@ -677,3 +677,26 @@ button:disabled { cursor: not-allowed; }
 .lobby__waiting { text-align: center; color: var(--muted); margin: 1.5rem 0; font-weight: 600; }
 
 .rules:disabled .segmented button.is-active { opacity: 1; }
+
+/* ---------- Online game ---------- */
+
+.table__notice {
+  background: rgba(215, 38, 0, 0.85);
+  text-align: center;
+  padding: 0.35rem 16px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.opponent--away { opacity: 0.6; }
+.timer {
+  display: inline-block;
+  margin-left: 0.5rem;
+  min-width: 2.4rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.timer--urgent { background: var(--red); color: #fff; animation: pulse 0.6s ease-in-out infinite; }
+.modal__note { color: var(--muted); margin: 0.8rem 0 0; }

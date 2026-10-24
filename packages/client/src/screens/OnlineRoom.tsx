@@ -1,28 +1,23 @@
 import { useEffect, useState } from 'react';
-import { MAX_PLAYERS, VARIANT_CATALOG, type BotDifficulty, type JoinedRoom } from '@uno/shared';
+import { MAX_PLAYERS, MIN_PLAYERS, playableIdsFromView, VARIANT_CATALOG, type BotDifficulty, type JoinedRoom } from '@uno/shared';
+import { GameTable, type EndAction } from '../components/GameTable';
 import { RulesPanel, Segmented } from '../components/RulesPanel';
 import { inviteLink, setRoomInUrl } from '../net/session';
-import { useLobby } from '../online/useLobby';
+import { useRoom, type OnlineGame, type Room } from '../online/useRoom';
 
-interface LobbyProps {
+interface OnlineRoomProps {
   joined: JoinedRoom;
   /** Back to the menu, with an optional message explaining why. */
   onExit: (message?: string) => void;
 }
 
-export function Lobby({ joined, onExit }: LobbyProps) {
-  const room = useLobby(joined);
-  const { lobby, isHost } = room;
-  const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('normal');
-  const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<'code' | 'link' | null>(null);
-  const listing = VARIANT_CATALOG.find((v) => v.id === lobby.variantId);
-  const host = lobby.seats.find((s) => s.id === lobby.hostId);
-  const full = lobby.seats.length >= MAX_PLAYERS;
+/** A room you're in: the lobby before a game, the table during one. */
+export function OnlineRoom({ joined, onExit }: OnlineRoomProps) {
+  const room = useRoom(joined);
 
   useEffect(() => {
-    setRoomInUrl(lobby.code);
-  }, [lobby.code]);
+    setRoomInUrl(room.lobby.code);
+  }, [room.lobby.code]);
 
   useEffect(() => {
     if (room.ended) {
@@ -31,9 +26,80 @@ export function Lobby({ joined, onExit }: LobbyProps) {
     }
   }, [room.ended, onExit]);
 
+  const leave = () => {
+    room.leave();
+    setRoomInUrl(null);
+    onExit();
+  };
+
+  if (room.game) return <OnlineTable room={room} game={room.game} onLeave={leave} />;
+  return <LobbyView room={room} onLeave={leave} />;
+}
+
+function OnlineTable({ room, game, onLeave }: { room: Room; game: OnlineGame; onLeave: () => void }) {
+  const { view } = game.update;
+  const host = room.lobby.seats.find((s) => s.id === room.lobby.hostId);
+  const awayIds = new Set(room.lobby.seats.filter((s) => !s.connected).map((s) => s.id));
+  const leaveAction: EndAction = { label: 'Leave room', onClick: onLeave };
+
+  let endActions: EndAction[] = [];
+  let endNote: string | undefined;
+  if (view.phase === 'roundOver') {
+    endActions = room.isHost ? [{ label: 'Start next round now', onClick: () => void room.nextRound().catch(() => {}), primary: true }] : [];
+  } else if (view.phase === 'gameOver') {
+    if (room.isHost) {
+      endActions = [
+        { label: 'Play again', onClick: () => void room.start().catch(() => {}), primary: true },
+        { label: 'Back to lobby', onClick: () => void room.returnToLobby().catch(() => {}) },
+        leaveAction,
+      ];
+    } else {
+      endNote = `Waiting for ${host?.name ?? 'the host'} to start another game…`;
+      endActions = [leaveAction];
+    }
+  }
+
+  return (
+    <GameTable
+      // A fresh table for every deal, so piles and animations reset.
+      key={`${view.round}-${view.scores.join(',')}-${game.update.view.phase === 'gameOver'}`}
+      view={view}
+      log={room.log}
+      playableIds={playableIdsFromView(view)}
+      onAction={room.act}
+      endActions={endActions}
+      endNote={endNote}
+      exitLabel="← Leave"
+      onExit={() => {
+        if (confirm('Leave the game? A bot will play your cards.')) onLeave();
+      }}
+      turnEndsAt={game.turnEndsAt}
+      nextRoundAt={game.nextRoundAt}
+      awayIds={awayIds}
+      notice={room.connected ? null : 'Connection lost. Reconnecting…'}
+    />
+  );
+}
+
+function LobbyView({ room, onLeave }: { room: Room; onLeave: () => void }) {
+  const { lobby, isHost } = room;
+  const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('normal');
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState<'code' | 'link' | null>(null);
+  const [starting, setStarting] = useState(false);
+  const listing = VARIANT_CATALOG.find((v) => v.id === lobby.variantId);
+  const host = lobby.seats.find((s) => s.id === lobby.hostId);
+  const full = lobby.seats.length >= MAX_PLAYERS;
+  const enoughPlayers = lobby.seats.length >= MIN_PLAYERS;
+
   const run = (promise: Promise<unknown>) => {
     setError(null);
-    promise.catch((err: Error) => setError(err.message));
+    return promise.catch((err: Error) => setError(err.message));
+  };
+
+  const start = () => {
+    setStarting(true);
+    void run(room.start()).finally(() => setStarting(false));
   };
 
   const copy = async (what: 'code' | 'link') => {
@@ -47,15 +113,9 @@ export function Lobby({ joined, onExit }: LobbyProps) {
     }
   };
 
-  const leave = () => {
-    room.leave();
-    setRoomInUrl(null);
-    onExit();
-  };
-
   return (
     <main className="setup lobby">
-      <button type="button" className="btn btn--ghost btn--small" onClick={leave}>← Leave</button>
+      <button type="button" className="btn btn--ghost btn--small" onClick={onLeave}>← Leave</button>
       <h1>{listing?.name ?? 'UNO'} lobby</h1>
 
       {!room.connected && <div className="banner" role="status">Connection lost. Reconnecting…</div>}
@@ -123,12 +183,10 @@ export function Lobby({ joined, onExit }: LobbyProps) {
 
       {isHost ? (
         <>
-          <button type="button" className="btn btn--primary btn--big" disabled title="Coming in the next update">
-            Start game
+          <button type="button" className="btn btn--primary btn--big" onClick={start} disabled={!enoughPlayers || starting}>
+            {starting ? 'Dealing…' : 'Start game'}
           </button>
-          <p className="hint lobby__start-note">
-            Starting online games is coming in the next update. For now you can set up the room, invite friends and pick rules.
-          </p>
+          {!enoughPlayers && <p className="hint lobby__start-note">Invite a friend or add a bot to start.</p>}
         </>
       ) : (
         <p className="lobby__waiting">Waiting for {host?.name ?? 'the host'} to start the game…</p>

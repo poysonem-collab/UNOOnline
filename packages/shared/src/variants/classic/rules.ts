@@ -1,4 +1,4 @@
-import type { Card, Color, GameState } from '../../types.js';
+import type { Card, Color, GameState, PlayerView } from '../../types.js';
 
 export function topCard(state: GameState): Card {
   const top = state.discardPile[state.discardPile.length - 1];
@@ -25,6 +25,17 @@ export function playableCards(state: GameState, seat: number): Card[] {
     return player.hand.filter((c) => c.id === state.drawnCardId && isPlayable(state, c));
   }
   return player.hand.filter((c) => isPlayable(state, c));
+}
+
+/** Ids of the cards you can play right now, worked out from your own view of the game. */
+export function playableIdsFromView(view: PlayerView): Set<string> {
+  const active = view.phase === 'playing' || view.phase === 'playDrawn';
+  if (!active || view.currentPlayer !== view.you) return new Set();
+  return new Set(
+    view.hand
+      .filter((c) => (view.phase !== 'playDrawn' || c.id === view.drawnCardId) && canPlayOn(c, view.topCard, view.currentColor))
+      .map((c) => c.id),
+  );
 }
 
 /** Seat `steps` places away from `from` in the current direction. */

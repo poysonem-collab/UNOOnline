@@ -4,25 +4,39 @@ import {
   cleanName,
   getVariant,
   normalizeRoomCode,
+  parseAction,
+  randomSeed,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
+  rulesForPlayerCount,
   sanitizeRules,
   VARIANT_CATALOG,
   type Ack,
   type BotDifficulty,
   type ClientToServerEvents,
+  type GameUpdate,
   type JoinedRoom,
   type ServerToClientEvents,
 } from '@uno/shared';
+import { DEFAULT_RUNNER_OPTIONS, GameRunner, type RunnerOptions } from '../game/GameRunner.js';
 import { Room, RoomError } from './Room.js';
 
 export type GameServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
 
 export interface RoomManagerOptions {
-  /** How long a disconnected player keeps their seat. */
+  /** How long a disconnected player keeps their lobby seat. */
   disconnectGraceMs: number;
+  /** A game with no connected humans is closed after this long. */
+  abandonedGameMs: number;
+  runner: RunnerOptions;
 }
+
+export const DEFAULT_ROOM_OPTIONS: RoomManagerOptions = {
+  disconnectGraceMs: 60_000,
+  abandonedGameMs: 5 * 60_000,
+  runner: DEFAULT_RUNNER_OPTIONS,
+};
 
 interface Binding {
   code: string;
@@ -34,16 +48,19 @@ const seatKey = (code: string, playerId: string) => `${code}:${playerId}`;
 /** Owns every room and routes socket events to them. */
 export class RoomManager {
   private readonly rooms = new Map<string, Room>();
+  private readonly games = new Map<string, GameRunner>();
   /** socket.id → the seat it controls. */
   private readonly bindings = new Map<string, Binding>();
   /** seatKey → socket.id controlling that seat. */
   private readonly seatSockets = new Map<string, string>();
-  /** seatKey → timer that drops a disconnected player. */
+  /** seatKey → timer that drops a disconnected player from the lobby. */
   private readonly graceTimers = new Map<string, NodeJS.Timeout>();
+  /** room code → timer that closes a game everyone has left. */
+  private readonly abandonTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly io: GameServer,
-    private readonly options: RoomManagerOptions,
+    private readonly options: RoomManagerOptions = DEFAULT_ROOM_OPTIONS,
   ) {}
 
   get roomCount(): number {
@@ -83,13 +100,51 @@ export class RoomManager {
         return {};
       }),
     );
+    socket.on('room:start', (ack) =>
+      this.handle(ack, () => {
+        const { room, playerId } = this.requireBinding(socket);
+        this.startGame(room, playerId);
+        return {};
+      }),
+    );
+    socket.on('room:returnToLobby', (ack) =>
+      this.handle(ack, () => {
+        const { room, playerId } = this.requireBinding(socket);
+        room.returnToLobby(playerId);
+        this.endGame(room);
+        this.broadcast(room);
+        return {};
+      }),
+    );
+    socket.on('game:action', (action, ack) =>
+      this.handle(ack, () => {
+        const { game, playerId } = this.requireGame(socket);
+        const parsed = parseAction(action);
+        if (!parsed) throw new RoomError('That move was not understood');
+        const error = game.apply(playerId, parsed);
+        if (error) throw new RoomError(error);
+        return {};
+      }),
+    );
+    socket.on('game:nextRound', (ack) =>
+      this.handle(ack, () => {
+        const { room, game, playerId } = this.requireGame(socket);
+        if (playerId !== room.hostId) throw new RoomError('Only the host can do that');
+        const error = game.nextRound();
+        if (error) throw new RoomError(error);
+        return {};
+      }),
+    );
     socket.on('disconnect', () => this.disconnected(socket));
   }
 
-  /** Stops all timers (used when shutting down). */
+  /** Stops all timers and games (used when shutting down). */
   dispose(): void {
-    for (const timer of this.graceTimers.values()) clearTimeout(timer);
+    for (const game of this.games.values()) game.dispose();
+    for (const timer of [...this.graceTimers.values(), ...this.abandonTimers.values()]) clearTimeout(timer);
+    this.games.clear();
     this.graceTimers.clear();
+    this.abandonTimers.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -107,7 +162,7 @@ export class RoomManager {
     const seat = room.addHuman(name);
     this.bind(socket, room, seat.id);
     console.log(`room ${room.code} created (${this.rooms.size} open)`);
-    return { code: room.code, playerId: seat.id, token: seat.token!, lobby: room.toLobbyState() };
+    return { code: room.code, playerId: seat.id, token: seat.token!, lobby: room.toLobbyState(), game: null };
   }
 
   private join(socket: GameSocket, req: { code: string; name: string; token?: string }): JoinedRoom {
@@ -122,9 +177,18 @@ export class RoomManager {
       if (current && (current.code !== code || current.playerId !== existing.id)) this.leave(socket);
       this.detachSeat(code, existing.id, 'replaced', socket.id);
       this.clearGrace(code, existing.id);
+      this.clearAbandon(code);
       room.setConnected(existing.id, true);
+      const game = this.games.get(code);
+      game?.playerReconnected(existing.id);
       this.bind(socket, room, existing.id);
-      return { code, playerId: existing.id, token: existing.token!, lobby: room.toLobbyState() };
+      return {
+        code,
+        playerId: existing.id,
+        token: existing.token!,
+        lobby: room.toLobbyState(),
+        game: game?.updateFor(existing.id) ?? null,
+      };
     }
 
     const name = cleanName(req.name);
@@ -132,7 +196,46 @@ export class RoomManager {
     this.leave(socket);
     const seat = room.addHuman(name);
     this.bind(socket, room, seat.id);
-    return { code, playerId: seat.id, token: seat.token!, lobby: room.toLobbyState() };
+    return { code, playerId: seat.id, token: seat.token!, lobby: room.toLobbyState(), game: null };
+  }
+
+  private startGame(room: Room, playerId: string): void {
+    // "Play again" from the results screen deals straight away.
+    if (room.status === 'playing' && this.games.get(room.code)?.phase === 'gameOver') {
+      room.returnToLobby(playerId);
+      this.endGame(room);
+    }
+    room.start(playerId);
+    const variant = getVariant(room.variantId);
+    const rules = rulesForPlayerCount(room.rules, room.seats.length);
+    const seats = room.seats.map(({ id, name, isBot, difficulty }) => ({ id, name, isBot, difficulty }));
+    const game = new GameRunner(
+      variant,
+      seats,
+      rules,
+      randomSeed(),
+      (id, update) => this.sendGame(room.code, id, update),
+      this.options.runner,
+    );
+    this.games.set(room.code, game);
+    // Players still reconnecting keep their seat for the whole game; a bot covers them meanwhile.
+    for (const seat of room.seats) {
+      if (!seat.isBot && !seat.connected) {
+        this.clearGrace(room.code, seat.id);
+        game.playerDisconnected(seat.id);
+      }
+    }
+    this.broadcast(room);
+  }
+
+  private endGame(room: Room): void {
+    this.games.get(room.code)?.dispose();
+    this.games.delete(room.code);
+    this.clearAbandon(room.code);
+    // Back in the lobby, anyone still disconnected gets the normal grace period.
+    for (const seat of room.seats) {
+      if (!seat.isBot && !seat.connected) this.startGrace(room, seat.id);
+    }
   }
 
   private leave(socket: GameSocket): void {
@@ -152,28 +255,78 @@ export class RoomManager {
     room.setConnected(binding.playerId, false);
     this.broadcast(room);
 
-    const key = seatKey(binding.code, binding.playerId);
-    this.graceTimers.set(
-      key,
-      setTimeout(() => {
-        this.graceTimers.delete(key);
-        if (room.seat(binding.playerId)?.connected === false) this.dropPlayer(binding.code, binding.playerId);
-      }, this.options.disconnectGraceMs),
-    );
+    if (room.status === 'playing') {
+      this.games.get(room.code)?.playerDisconnected(binding.playerId);
+      this.checkAbandoned(room);
+    } else {
+      this.startGrace(room, binding.playerId);
+    }
   }
 
-  /** Removes a player from a room, closing the room if no humans are left. */
+  /**
+   * Removes a player for good. In a game their seat stays and a bot plays it.
+   * Closes the room if no humans are left.
+   */
   private dropPlayer(code: string, playerId: string): void {
     const room = this.rooms.get(code);
     if (!room) return;
     this.clearGrace(code, playerId);
-    room.leave(playerId);
-    if (room.hasHumans()) {
-      this.broadcast(room);
+    if (room.status === 'playing') {
+      room.convertToBot(playerId);
+      this.games.get(code)?.playerLeft(playerId);
     } else {
-      this.rooms.delete(code);
-      console.log(`room ${code} closed (${this.rooms.size} open)`);
+      room.leave(playerId);
     }
+
+    if (!room.hasHumans()) {
+      this.closeRoom(code);
+      return;
+    }
+    this.broadcast(room);
+    if (room.status === 'playing') this.checkAbandoned(room);
+  }
+
+  private closeRoom(code: string): void {
+    this.games.get(code)?.dispose();
+    this.games.delete(code);
+    this.clearAbandon(code);
+    this.rooms.delete(code);
+    console.log(`room ${code} closed (${this.rooms.size} open)`);
+  }
+
+  private startGrace(room: Room, playerId: string): void {
+    const key = seatKey(room.code, playerId);
+    clearTimeout(this.graceTimers.get(key));
+    this.graceTimers.set(
+      key,
+      setTimeout(() => {
+        this.graceTimers.delete(key);
+        if (room.seat(playerId)?.connected === false) this.dropPlayer(room.code, playerId);
+      }, this.options.disconnectGraceMs),
+    );
+  }
+
+  private clearGrace(code: string, playerId: string): void {
+    const key = seatKey(code, playerId);
+    clearTimeout(this.graceTimers.get(key));
+    this.graceTimers.delete(key);
+  }
+
+  /** Bots shouldn't play on forever for nobody: close a game when every human has gone. */
+  private checkAbandoned(room: Room): void {
+    if (room.hasConnectedHumans() || this.abandonTimers.has(room.code)) return;
+    this.abandonTimers.set(
+      room.code,
+      setTimeout(() => {
+        this.abandonTimers.delete(room.code);
+        if (!room.hasConnectedHumans()) this.closeRoom(room.code);
+      }, this.options.abandonedGameMs),
+    );
+  }
+
+  private clearAbandon(code: string): void {
+    clearTimeout(this.abandonTimers.get(code));
+    this.abandonTimers.delete(code);
   }
 
   /** Disconnects whichever socket controls a seat, telling it why. */
@@ -203,12 +356,6 @@ export class RoomManager {
     if (this.seatSockets.get(key) === socketId) this.seatSockets.delete(key);
   }
 
-  private clearGrace(code: string, playerId: string): void {
-    const key = seatKey(code, playerId);
-    clearTimeout(this.graceTimers.get(key));
-    this.graceTimers.delete(key);
-  }
-
   private requireBinding(socket: GameSocket): { room: Room; playerId: string } {
     const binding = this.bindings.get(socket.id);
     const room = binding && this.rooms.get(binding.code);
@@ -216,8 +363,20 @@ export class RoomManager {
     return { room, playerId: binding.playerId };
   }
 
+  private requireGame(socket: GameSocket): { room: Room; game: GameRunner; playerId: string } {
+    const { room, playerId } = this.requireBinding(socket);
+    const game = this.games.get(room.code);
+    if (!game) throw new RoomError('The game has not started');
+    return { room, game, playerId };
+  }
+
   private broadcast(room: Room): void {
     this.io.to(room.code).emit('room:state', room.toLobbyState());
+  }
+
+  private sendGame(code: string, playerId: string, update: GameUpdate): void {
+    const socketId = this.seatSockets.get(seatKey(code, playerId));
+    if (socketId) this.io.to(socketId).emit('game:state', update);
   }
 
   private newCode(): string {

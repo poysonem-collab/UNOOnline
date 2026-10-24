@@ -5,7 +5,7 @@ import { roomFromUrl } from './net/session';
 import { CardGallery } from './screens/CardGallery';
 import { Home } from './screens/Home';
 import { LocalGame } from './screens/LocalGame';
-import { Lobby } from './screens/Lobby';
+import { OnlineRoom } from './screens/OnlineRoom';
 import { Setup, type SetupTab } from './screens/Setup';
 
 type Screen =
@@ -50,7 +50,7 @@ export function App() {
         />
       );
     case 'lobby':
-      return <Lobby joined={screen.joined} onExit={leaveLobby} />;
+      return <OnlineRoom joined={screen.joined} onExit={leaveLobby} />;
     case 'game':
       return (
         <LocalGame

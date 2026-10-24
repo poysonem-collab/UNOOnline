@@ -1,5 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { BotDifficulty, JoinedRoom, KickReason, LobbyState, RuleSet } from '@uno/shared';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  describeEvent,
+  type Action,
+  type BotDifficulty,
+  type GameUpdate,
+  type JoinedRoom,
+  type KickReason,
+  type LobbyState,
+  type RuleSet,
+} from '@uno/shared';
+import type { LogEntry } from '../local/useLocalGame';
 import { api, getSocket } from '../net/socket';
 import { clearSession, loadSession, saveSession } from '../net/session';
 
@@ -8,10 +18,29 @@ const KICK_MESSAGES: Record<KickReason, string> = {
   replaced: 'You opened this room in another tab or device.',
 };
 
-/** Live state of the lobby you're in, kept in sync with the server. */
-export function useLobby(joined: JoinedRoom) {
+/** The game as this player sees it, with server countdowns turned into local clock times. */
+export interface OnlineGame {
+  update: GameUpdate;
+  turnEndsAt: number | null;
+  nextRoundAt: number | null;
+}
+
+function toOnlineGame(update: GameUpdate): OnlineGame {
+  const now = Date.now();
+  return {
+    update,
+    turnEndsAt: update.turnEndsInMs === null ? null : now + update.turnEndsInMs,
+    nextRoundAt: update.nextRoundInMs === null ? null : now + update.nextRoundInMs,
+  };
+}
+
+/** Live state of the room you're in (lobby and game), kept in sync with the server. */
+export function useRoom(joined: JoinedRoom) {
   const { code, playerId } = joined;
   const [lobby, setLobby] = useState<LobbyState>(joined.lobby);
+  const [game, setGame] = useState<OnlineGame | null>(joined.game && toOnlineGame(joined.game));
+  const [log, setLog] = useState<LogEntry[]>([]);
+  const logId = useRef(0);
   const [connected, setConnected] = useState(true);
   /** Set when you can no longer be in this room; the screen should send you back. */
   const [ended, setEnded] = useState<string | null>(null);
@@ -19,7 +48,20 @@ export function useLobby(joined: JoinedRoom) {
   useEffect(() => {
     const socket = getSocket();
     const onState = (state: LobbyState) => {
-      if (state.code === code) setLobby(state);
+      if (state.code !== code) return;
+      setLobby(state);
+      if (state.status === 'lobby') {
+        setGame(null);
+        setLog([]);
+      }
+    };
+    const onGame = (update: GameUpdate) => {
+      setGame(toOnlineGame(update));
+      const lines = update.events
+        .map((e) => describeEvent(e, update.view.players, update.view.you))
+        .filter((t): t is string => t !== null)
+        .map((text) => ({ id: logId.current++, text }));
+      if (lines.length) setLog((prev) => [...prev, ...lines].slice(-30));
     };
     const onKicked = (reason: KickReason) => {
       clearSession();
@@ -33,6 +75,7 @@ export function useLobby(joined: JoinedRoom) {
       api.joinRoom(code, session.name, session.token).then(
         (back) => {
           setLobby(back.lobby);
+          setGame(back.game && toOnlineGame(back.game));
           setConnected(true);
         },
         (err: Error) => {
@@ -43,11 +86,13 @@ export function useLobby(joined: JoinedRoom) {
     };
 
     socket.on('room:state', onState);
+    socket.on('game:state', onGame);
     socket.on('room:kicked', onKicked);
     socket.on('disconnect', onDisconnect);
     socket.on('connect', onConnect);
     return () => {
       socket.off('room:state', onState);
+      socket.off('game:state', onGame);
       socket.off('room:kicked', onKicked);
       socket.off('disconnect', onDisconnect);
       socket.off('connect', onConnect);
@@ -64,8 +109,16 @@ export function useLobby(joined: JoinedRoom) {
     clearSession();
   }, []);
 
+  /** Sends a move; resolves to an error message, or null. */
+  const act = useCallback(
+    (action: Action) => api.sendAction(action).then(() => null, (err: Error) => err.message),
+    [],
+  );
+
   return {
     lobby,
+    game: lobby.status === 'playing' ? game : null,
+    log,
     playerId,
     isHost: lobby.hostId === playerId,
     connected,
@@ -73,9 +126,15 @@ export function useLobby(joined: JoinedRoom) {
     updateRules,
     addBot: (difficulty: BotDifficulty) => api.addBot(difficulty),
     removeSeat: (id: string) => api.removeSeat(id),
+    start: () => api.startGame(),
+    returnToLobby: () => api.returnToLobby(),
+    nextRound: () => api.nextRound(),
+    act,
     leave,
   };
 }
+
+export type Room = ReturnType<typeof useRoom>;
 
 /** Saves what's needed to get back into the room after a refresh. */
 export function rememberRoom(joined: JoinedRoom, name: string): void {

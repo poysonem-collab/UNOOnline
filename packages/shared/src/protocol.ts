@@ -1,4 +1,4 @@
-import type { RuleSet } from './types.js';
+import { COLORS, MAX_PLAYERS, type Action, type Color, type GameEvent, type PlayerView, type RuleSet } from './types.js';
 import type { BotDifficulty } from './variants/Variant.js';
 
 export const ROOM_CODE_LENGTH = 4;
@@ -26,12 +26,26 @@ export interface LobbyState {
   status: 'lobby' | 'playing';
 }
 
+/** Sent to each player after every change in an online game. */
+export interface GameUpdate {
+  /** Only what this player is allowed to see. */
+  view: PlayerView;
+  /** What just happened, for the log and animations. */
+  events: GameEvent[];
+  /** Time left on the current player's turn timer, or null if none is running. */
+  turnEndsInMs: number | null;
+  /** Time until the next round starts by itself, while a round is over. */
+  nextRoundInMs: number | null;
+}
+
 /** Returned to a player when they enter a room. Keep `token` secret: it reclaims the seat. */
 export interface JoinedRoom {
   code: string;
   playerId: string;
   token: string;
   lobby: LobbyState;
+  /** The game in progress, when rejoining mid-game. */
+  game: GameUpdate | null;
 }
 
 export type AckResult<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -46,6 +60,13 @@ export interface ClientToServerEvents {
   'room:addBot': (req: { difficulty: BotDifficulty }, ack: Ack) => void;
   /** Host only: remove a bot or kick a player. */
   'room:removeSeat': (req: { playerId: string }, ack: Ack) => void;
+  /** Host only: deal a game for everyone in the room. */
+  'room:start': (ack: Ack) => void;
+  /** Host only: end the game and go back to the lobby. */
+  'room:returnToLobby': (ack: Ack) => void;
+  'game:action': (action: Action, ack: Ack) => void;
+  /** Host only: start the next round now instead of waiting. */
+  'game:nextRound': (ack: Ack) => void;
 }
 
 export type KickReason = 'removed' | 'replaced';
@@ -54,6 +75,36 @@ export interface ServerToClientEvents {
   'room:state': (lobby: LobbyState) => void;
   /** This connection no longer has a seat: kicked by the host, or the seat was reclaimed in another tab. */
   'room:kicked': (reason: KickReason) => void;
+  'game:state': (update: GameUpdate) => void;
+}
+
+const MAX_CARDS_PER_PLAY = 10;
+
+/** Checks a move sent by a browser. Returns null if it isn't a well-formed action. */
+export function parseAction(input: unknown): Action | null {
+  if (typeof input !== 'object' || input === null) return null;
+  const raw = input as Record<string, unknown>;
+  switch (raw.type) {
+    case 'draw':
+    case 'pass':
+    case 'callUno':
+      return { type: raw.type };
+    case 'catchUno':
+      return Number.isInteger(raw.target) && (raw.target as number) >= 0 && (raw.target as number) < MAX_PLAYERS
+        ? { type: 'catchUno', target: raw.target as number }
+        : null;
+    case 'play': {
+      const ids = raw.cardIds;
+      if (!Array.isArray(ids) || ids.length === 0 || ids.length > MAX_CARDS_PER_PLAY) return null;
+      if (!ids.every((id) => typeof id === 'string' && id.length <= 20)) return null;
+      if (raw.color !== undefined && !COLORS.includes(raw.color as Color)) return null;
+      const action: Action = { type: 'play', cardIds: ids as string[] };
+      if (raw.color !== undefined) action.color = raw.color as Color;
+      return action;
+    }
+    default:
+      return null;
+  }
 }
 
 export function normalizeRoomCode(input: string): string {

@@ -4,13 +4,16 @@ import type { AddressInfo } from 'node:net';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Server } from 'socket.io';
-import { RoomManager, type GameServer } from './rooms/RoomManager.js';
+import type { RunnerOptions } from './game/GameRunner.js';
+import { DEFAULT_ROOM_OPTIONS, RoomManager, type GameServer } from './rooms/RoomManager.js';
 
 export interface ServerOptions {
   port: number;
   /** Folder with the built website; defaults to packages/client/dist. */
   clientDir?: string;
   disconnectGraceMs?: number;
+  abandonedGameMs?: number;
+  runner?: Partial<RunnerOptions>;
   /** Other sites allowed to connect (e.g. a GitHub Pages copy of the client). */
   corsOrigins?: string[];
 }
@@ -35,7 +38,11 @@ export async function startServer(options: ServerOptions) {
     cors: options.corsOrigins?.length ? { origin: options.corsOrigins } : undefined,
     maxHttpBufferSize: 16_000,
   });
-  const rooms = new RoomManager(io, { disconnectGraceMs: options.disconnectGraceMs ?? 60_000 });
+  const rooms = new RoomManager(io, {
+    disconnectGraceMs: options.disconnectGraceMs ?? DEFAULT_ROOM_OPTIONS.disconnectGraceMs,
+    abandonedGameMs: options.abandonedGameMs ?? DEFAULT_ROOM_OPTIONS.abandonedGameMs,
+    runner: { ...DEFAULT_ROOM_OPTIONS.runner, ...options.runner },
+  });
   io.on('connection', (socket) => rooms.attach(socket));
 
   await new Promise<void>((resolve) => http.listen(options.port, resolve));

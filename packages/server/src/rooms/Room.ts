@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import {
   BOT_NAMES,
   MAX_PLAYERS,
+  MIN_PLAYERS,
   type BotDifficulty,
   type LobbySeat,
   type LobbyState,
@@ -66,6 +67,7 @@ export class Room {
   /** Host removes a bot or kicks a player. Returns the removed seat. */
   removeSeat(byId: string, targetId: string): Seat {
     this.requireHost(byId);
+    if (this.status !== 'lobby') throw new RoomError("Players can't be removed during a game");
     if (targetId === byId) throw new RoomError('Use Leave to leave the room');
     const seat = this.seat(targetId);
     if (!seat) throw new RoomError('That player is not in the room');
@@ -79,9 +81,30 @@ export class Room {
     this.rules = rules;
   }
 
+  start(byId: string): void {
+    this.requireHost(byId);
+    if (this.status !== 'lobby') throw new RoomError('The game has already started');
+    if (this.seats.length < MIN_PLAYERS) throw new RoomError('Add a bot or invite a friend first');
+    this.status = 'playing';
+  }
+
+  returnToLobby(byId: string): void {
+    this.requireHost(byId);
+    if (this.status !== 'playing') throw new RoomError('There is no game in progress');
+    this.status = 'lobby';
+  }
+
   /** A player leaves (or is dropped after disconnecting). Hands host to the next human. */
   leave(playerId: string): void {
     this.remove(playerId);
+  }
+
+  /** A player leaves mid-game: their seat stays, played by a bot. */
+  convertToBot(playerId: string): void {
+    const seat = this.seat(playerId);
+    if (!seat || seat.isBot) return;
+    Object.assign(seat, { isBot: true, difficulty: 'normal', token: null, connected: true });
+    if (playerId === this.hostId) this.pickNewHost();
   }
 
   /** Host stays with a disconnected player during the reconnect grace period, so a refresh doesn't lose it. */
@@ -100,6 +123,10 @@ export class Room {
 
   hasHumans(): boolean {
     return this.seats.some((s) => !s.isBot);
+  }
+
+  hasConnectedHumans(): boolean {
+    return this.seats.some((s) => !s.isBot && s.connected);
   }
 
   toLobbyState(): LobbyState {

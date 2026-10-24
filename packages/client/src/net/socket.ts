@@ -1,6 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import type {
   AckResult,
+  Action,
   BotDifficulty,
   ClientToServerEvents,
   JoinedRoom,
@@ -62,6 +63,10 @@ export const api = {
   updateRules: (rules: RuleSet) => call((s) => s.emitWithAck('room:updateRules', rules)),
   addBot: (difficulty: BotDifficulty) => call((s) => s.emitWithAck('room:addBot', { difficulty })),
   removeSeat: (playerId: string) => call((s) => s.emitWithAck('room:removeSeat', { playerId })),
+  startGame: () => call((s) => s.emitWithAck('room:start')),
+  returnToLobby: () => call((s) => s.emitWithAck('room:returnToLobby')),
+  nextRound: () => call((s) => s.emitWithAck('game:nextRound')),
+  sendAction: (action: Action) => call((s) => s.emitWithAck('game:action', action)),
   leaveRoom: () => {
     getSocket().emit('room:leave');
   },
