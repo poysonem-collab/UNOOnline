@@ -1,4 +1,16 @@
-import { deckFor, getVariant, HAND_SIZES, needsTwoDecks, type RuleSet } from '@uno/shared';
+import {
+  CUSTOM_EFFECT_INFO,
+  CUSTOM_EFFECTS,
+  deckFor,
+  getVariant,
+  HAND_SIZES,
+  MAX_CUSTOM_NAME,
+  needsTwoDecks,
+  type CustomEffect,
+  type CustomWild,
+  type RuleSet,
+} from '@uno/shared';
+import { Card, CustomWildsContext } from './Card';
 
 interface RulesPanelProps {
   /** Some rules read differently per game (UNO Flip has no 0s and its own draw cards). */
@@ -92,6 +104,10 @@ export function RulesPanel({ variantId = 'classic', rules, onChange, playerCount
         </label>
       )}
 
+      {offered.includes('customWilds') && (
+        <BlankWilds cards={rules.customWilds} onChange={(cards) => set('customWilds', cards)} />
+      )}
+
       <h3 className="rules__heading">House rules</h3>
       {variantId === 'no-mercy' && (
         <p className="rules__builtin">
@@ -124,6 +140,36 @@ export function RulesPanel({ variantId = 'classic', rules, onChange, playerCount
         </div>
       ))}
     </fieldset>
+  );
+}
+
+/** Giant UNO: the host writes a name on each blank wild card and picks what it does. */
+function BlankWilds({ cards, onChange }: { cards: CustomWild[]; onChange: (cards: CustomWild[]) => void }) {
+  const update = (i: number, change: Partial<CustomWild>) => onChange(cards.map((c, j) => (j === i ? { ...c, ...change } : c)));
+  return (
+    <>
+      <h3 className="rules__heading">Blank wild cards</h3>
+      <p className="hint">Giant UNO comes with blank wilds to write your own rules on. Name each one and pick what it does.</p>
+      <CustomWildsContext.Provider value={cards}>
+        {cards.map((card, i) => (
+          <div key={i} className="blank-wild">
+            <Card card={{ color: 'wild', value: i === 0 ? 'custom1' : 'custom2' }} className="blank-wild__card" />
+            <div className="blank-wild__fields">
+              <input
+                type="text" value={card.name} maxLength={MAX_CUSTOM_NAME}
+                placeholder={CUSTOM_EFFECT_INFO[card.effect].label}
+                aria-label={`Name for blank wild ${i + 1}`}
+                onChange={(e) => update(i, { name: e.target.value })}
+              />
+              <select value={card.effect} aria-label={`What blank wild ${i + 1} does`} onChange={(e) => update(i, { effect: e.target.value as CustomEffect })}>
+                {CUSTOM_EFFECTS.map((effect) => <option key={effect} value={effect}>{CUSTOM_EFFECT_INFO[effect].label}</option>)}
+              </select>
+              <small>{CUSTOM_EFFECT_INFO[card.effect].hint}</small>
+            </div>
+          </div>
+        ))}
+      </CustomWildsContext.Provider>
+    </>
   );
 }
 

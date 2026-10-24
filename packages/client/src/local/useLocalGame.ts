@@ -60,7 +60,7 @@ export function useLocalGame(config: LocalGameConfig) {
     setState(result.state);
     setEvents((prev) => ({ seq: (prev?.seq ?? 0) + 1, events: result.events, at: Date.now() }));
     const lines = result.events
-      .map((e) => describeEvent(e, result.state.players, YOU))
+      .map((e) => describeEvent(e, result.state.players, YOU, result.state.rules))
       .filter((t): t is string => t !== null)
       .map((text) => ({ id: logId.current++, text }));
     if (lines.length) setLog((prev) => [...prev, ...lines].slice(-30));

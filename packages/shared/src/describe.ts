@@ -1,4 +1,5 @@
-import type { CardFace, Color, GameEvent, PlayerInfo } from './types.js';
+import type { CardFace, Color, GameEvent, PlayerInfo, RuleSet } from './types.js';
+import { customWildFor, customWildTitle } from './variants/giant/customWilds.js';
 
 const VALUE_NAMES: Record<string, string> = {
   skip: 'Skip',
@@ -26,20 +27,23 @@ export function colorName(color: Color): string {
   return color[0]!.toUpperCase() + color.slice(1);
 }
 
-/** "Red 5", "Blue Skip", "Wild Draw Four". */
-export function describeCard(card: CardFace): string {
+/** "Red 5", "Blue Skip", "Wild Draw Four" (and with the rules, Giant UNO's blank wilds: "Wild: Shuffle hands"). */
+export function describeCard(card: CardFace, rules?: Pick<RuleSet, 'customWilds'>): string {
+  const custom = rules && customWildFor(rules, card.value);
+  if (custom) return `Wild: ${customWildTitle(custom)}`;
+  if (card.value === 'custom1' || card.value === 'custom2') return 'Blank Wild';
   const value = VALUE_NAMES[String(card.value)] ?? String(card.value);
   return card.color === 'wild' ? value : `${colorName(card.color)} ${value}`;
 }
 
 /** A short log line for an event, or null for events not worth showing. */
-export function describeEvent(event: GameEvent, players: PlayerInfo[], you: number): string | null {
+export function describeEvent(event: GameEvent, players: PlayerInfo[], you: number, rules?: Pick<RuleSet, 'customWilds'>): string | null {
   const name = (seat: number) => (seat === you ? 'You' : players[seat]?.name ?? '?');
   switch (event.type) {
     case 'played': {
       const card = event.cards[0]!;
       const suffix = card.color === 'wild' ? ` (${colorName(event.color)})` : '';
-      return `${name(event.seat)} played ${event.cards.map(describeCard).join(', ')}${suffix}`;
+      return `${name(event.seat)} played ${event.cards.map((c) => describeCard(c, rules)).join(', ')}${suffix}`;
     }
     case 'drew':
       return `${name(event.seat)} drew ${event.count} card${event.count === 1 ? '' : 's'}`;
@@ -73,6 +77,10 @@ export function describeEvent(event: GameEvent, players: PlayerInfo[], you: numb
       return `${name(event.seat)} chose ${colorName(event.color)}`;
     case 'skippedEveryone':
       return `${name(event.seat)} skipped everyone and goes again`;
+    case 'shuffledHands':
+      return "Everyone's hands were shuffled together and dealt back out";
+    case 'everyoneDrew':
+      return `Everyone except ${name(event.seat)} draws ${event.count}`;
     case 'playAgain':
       return `${name(event.seat)} played a 10 and ${event.seat === you ? 'go' : 'goes'} again`;
     case 'discardedAll':

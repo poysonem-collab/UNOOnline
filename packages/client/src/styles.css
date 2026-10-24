@@ -1,5 +1,4 @@
 :root {
-  --felt: #17603d;
   --felt-dark: #0c3a24;
   --panel: rgba(0, 0, 0, 0.28);
   --panel-strong: rgba(0, 0, 0, 0.45);
@@ -22,9 +21,90 @@ html, body { margin: 0; min-height: 100%; }
 html { background: var(--felt-dark); }
 
 body {
-  background: radial-gradient(ellipse at center, var(--felt) 0%, var(--felt-dark) 100%) fixed;
+  background: var(--bg);
+  background-attachment: fixed;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* ---------- Table themes (picked with the 🎨 button; see effects/theme.ts) ---------- */
+
+:root, [data-theme='classic'] {
+  --felt-dark: #0c3a24;
+  --bg: radial-gradient(ellipse at center, #17603d 0%, #0c3a24 100%);
+}
+[data-theme='ocean'] {
+  --felt-dark: #041a2e;
+  --bg:
+    repeating-linear-gradient(165deg, rgba(255, 255, 255, 0.035) 0 12px, transparent 12px 44px),
+    radial-gradient(ellipse at 50% 30%, #1d7fae 0%, #0b3d63 55%, #041a2e 100%);
+}
+[data-theme='midnight'] {
+  --felt-dark: #05071a;
+  --bg:
+    radial-gradient(1.5px 1.5px at 12% 18%, #fff 50%, transparent 100%) 0 0 / 260px 260px,
+    radial-gradient(1px 1px at 63% 41%, rgba(255, 255, 255, 0.8) 50%, transparent 100%) 0 0 / 260px 260px,
+    radial-gradient(1.4px 1.4px at 82% 77%, rgba(255, 255, 255, 0.9) 50%, transparent 100%) 0 0 / 260px 260px,
+    radial-gradient(1px 1px at 35% 68%, rgba(200, 220, 255, 0.8) 50%, transparent 100%) 0 0 / 170px 170px,
+    radial-gradient(ellipse at 50% 0%, #1e2a5e 0%, #0b1030 55%, #05071a 100%);
+}
+[data-theme='sunset'] {
+  --felt-dark: #1d0b35;
+  --bg: radial-gradient(ellipse 120% 70% at 50% 115%, #ffb15c 0%, #ff7a59 18%, #d9466f 38%, #6a2477 65%, #1d0b35 100%);
+}
+[data-theme='wood'] {
+  --felt-dark: #2e1a0d;
+  --bg:
+    radial-gradient(ellipse at center, transparent 40%, rgba(0, 0, 0, 0.45) 100%),
+    repeating-linear-gradient(92deg, rgba(0, 0, 0, 0.1) 0 2px, transparent 2px 11px),
+    repeating-linear-gradient(88deg, rgba(255, 220, 170, 0.05) 0 1px, transparent 1px 27px),
+    linear-gradient(180deg, #8a5a33 0%, #6b4226 50%, #4a2c17 100%);
+}
+[data-theme='neon'] {
+  --felt-dark: #0a0418;
+  --bg:
+    linear-gradient(rgba(255, 46, 196, 0.16) 1px, transparent 1px) 0 0 / 44px 44px,
+    linear-gradient(90deg, rgba(0, 229, 255, 0.14) 1px, transparent 1px) 0 0 / 44px 44px,
+    radial-gradient(ellipse at center, #2b0d4f 0%, #0a0418 100%);
+}
+[data-theme='candy'] {
+  --felt-dark: #3d1470;
+  --bg:
+    radial-gradient(circle, rgba(255, 255, 255, 0.13) 3px, transparent 4px) 0 0 / 30px 30px,
+    radial-gradient(circle, rgba(255, 255, 255, 0.08) 2px, transparent 3px) 15px 15px / 30px 30px,
+    linear-gradient(135deg, #c2367f 0%, #8a2fc2 55%, #4b1a8f 100%);
+}
+
+.themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: 0.7rem;
+  margin: 0.4rem 0 1rem;
+}
+.theme-tile {
+  background: var(--bg);
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius);
+  padding: 0.9rem 0.5rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  min-height: 7rem;
+}
+.theme-tile.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.theme-tile:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.theme-tile__cards { display: flex; gap: 0.25rem; }
+.theme-tile__cards .card { --card-w: 34px; }
+.theme-tile__name {
+  font-weight: 700;
+  font-size: 0.85rem;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+}
+.home { position: relative; }
+.home__theme { position: absolute; top: 1rem; right: 16px; z-index: 1; }
 
 h1, h2, h3 { margin: 0; }
 
@@ -860,7 +940,8 @@ button:disabled { cursor: not-allowed; }
 /* ---------- UNO Flip ---------- */
 
 .table--dark {
-  background: radial-gradient(ellipse at center, #3b1d52 0%, #12081a 100%);
+  /* The dark side darkens whatever theme is on, so a flip is always obvious. */
+  background: linear-gradient(rgba(46, 12, 74, 0.74), rgba(14, 4, 26, 0.84)), var(--bg);
   transition: background 0.6s;
 }
 .table--dark .direction svg { stroke: #c9a7ff; }
@@ -884,9 +965,11 @@ button:disabled { cursor: not-allowed; }
 
 /* ---------- UNO Show 'Em No Mercy ---------- */
 
-.table--nomercy {
+/* No Mercy turns the classic felt red; other themes get a red glow around the edges. */
+[data-theme='classic'] .table--nomercy {
   background: radial-gradient(ellipse at center, #5a1414 0%, #1c0606 100%);
 }
+.table--nomercy { box-shadow: inset 0 0 140px rgba(255, 30, 30, 0.3); }
 .table--nomercy .direction svg { stroke: #ff9b8a; }
 .rules__builtin {
   font-size: 0.85rem;
@@ -929,3 +1012,28 @@ button:disabled { cursor: not-allowed; }
   font-size: 15px;
   letter-spacing: 0.5px;
 }
+.card__writing {
+  font-family: 'Segoe Print', 'Bradley Hand', 'Marker Felt', 'Comic Sans MS', 'Chalkboard SE', cursive;
+  font-weight: 700;
+}
+
+/* ---------- Giant UNO ---------- */
+
+.table--giant {
+  /* Supersized cards. */
+  --card-w: clamp(70px, 11vw, 124px);
+  --table-card-w: clamp(92px, 15vw, 156px);
+}
+.blank-wild { display: flex; gap: 0.8rem; align-items: center; padding: 0.4rem 0; }
+.blank-wild__card { flex: none; --card-w: 54px; }
+.blank-wild__fields { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 0; }
+.blank-wild__fields input, .blank-wild__fields select {
+  background: var(--panel-strong);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0.45rem 0.7rem;
+  font: inherit;
+  width: 100%;
+}
+.blank-wild__fields small { color: var(--muted); font-size: 0.8rem; }

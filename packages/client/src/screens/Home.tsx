@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { VARIANT_CATALOG } from '@uno/shared';
 import { Card } from '../components/Card';
+import { ThemePicker } from '../components/ThemePicker';
 import { ONLINE_AVAILABLE } from '../net/socket';
 
 const PREVIEW_CARDS = [
@@ -11,8 +13,11 @@ const PREVIEW_CARDS = [
 ] as const;
 
 export function Home({ onChoose, onJoinFriend }: { onChoose: (variantId: string) => void; onJoinFriend: () => void }) {
+  const [showThemes, setShowThemes] = useState(false);
   return (
     <main className="home">
+      <button type="button" className="icon-btn home__theme" onClick={() => setShowThemes(true)} aria-label="Table theme" title="Table theme">🎨</button>
+      {showThemes && <ThemePicker onClose={() => setShowThemes(false)} />}
       <header className="home__hero">
         <div className="home__fan" aria-hidden>
           {PREVIEW_CARDS.map((card, i) => (

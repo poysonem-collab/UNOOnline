@@ -129,6 +129,21 @@ describe('lobby server', () => {
     expect(game.update!.view.hand).toHaveLength(7);
   });
 
+  it('lets a Giant UNO host write on the blank wild cards', async () => {
+    const c = await client();
+    const joined = ok(await c.emitWithAck('room:create', { name: 'Host', variantId: 'giant' }));
+    expect(joined.lobby.rules.customWilds).toHaveLength(2);
+    const update = nextState(c, (l) => l.rules.customWilds[0]?.name === 'Disco');
+    ok(await c.emitWithAck('room:updateRules', {
+      ...joined.lobby.rules,
+      customWilds: [{ name: '  Disco  ', effect: 'playAgain' }, { name: 'x'.repeat(50), effect: 'hack' as 'wild' }],
+    }));
+    expect((await update).rules.customWilds).toEqual([
+      { name: 'Disco', effect: 'playAgain' },
+      { name: 'x'.repeat(20), effect: 'everyoneDraws2' },
+    ]);
+  });
+
   it('does not let guests change rules', async () => {
     const { joined } = await createRoom();
     const { c: guest } = await joinRoom(joined.code);

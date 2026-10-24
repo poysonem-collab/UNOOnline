@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { colorName, colorsForSide, describeCard, type Action, type Card as CardData, type Color, type PlayerView } from '@uno/shared';
-import { Card, CardBack, CARD_COLORS, CardThemeContext, cardThemeFor } from './Card';
+import { colorName, colorsForSide, customWildFor, describeCard, type Action, type Card as CardData, type Color, type PlayerView } from '@uno/shared';
+import { Card, CardBack, CARD_COLORS, CardThemeContext, cardThemeFor, CustomWildsContext } from './Card';
 import { ColorPicker } from './ColorPicker';
 import { Confetti } from './Confetti';
 import { Flights, type Flight } from './Flights';
 import { Opponent } from './Opponent';
 import { RevealedHands, ScoreboardModal, Standings } from './Scoreboard';
 import { SwapPicker } from './SwapPicker';
+import { ThemePicker } from './ThemePicker';
 import { burstFor, soundsFor, type Burst, type EventBatch } from '../effects/eventEffects';
 import { playSound, playSounds } from '../effects/sound';
 import { useMuted } from '../effects/useMuted';
@@ -100,6 +101,7 @@ export function GameTable({
   const flightId = useRef(0);
   const [burst, setBurst] = useState<(Burst & { key: number }) | null>(null);
   const [showScores, setShowScores] = useState(false);
+  const [showThemes, setShowThemes] = useState(false);
   const [muted, setMuted] = useMuted();
   const drawPileRef = useRef<HTMLButtonElement>(null);
   const discardRef = useRef<HTMLDivElement>(null);
@@ -128,6 +130,7 @@ export function GameTable({
   const gameActive = view.phase === 'playing' || view.phase === 'playDrawn' || view.phase === 'chooseColor' || view.phase === 'roulette';
   const yourTurn = view.currentPlayer === view.you && gameActive;
   const noMercy = view.variantId === 'no-mercy';
+  const giant = view.variantId === 'giant';
   const sideColors = colorsForSide(view.side);
 
   // Each new move: sounds, a callout for big moments, and cards flying across the table.
@@ -227,10 +230,11 @@ export function GameTable({
   /** Plays the cards, first asking for a color or a swap target if the last card needs one. */
   const submitPlay = (cardIds: string[], color?: Color, swapWith?: number, discardColor?: Color) => {
     const last = cardById(cardIds[cardIds.length - 1]!);
+    const custom = customWildFor(view.rules, last.value)?.effect;
     // Wild Discard All asks which color to throw away first, then the color in play.
-    if (last.value === 'wildDiscardAll' && !discardColor) return setPicker({ kind: 'discard', cardIds });
+    if ((last.value === 'wildDiscardAll' || custom === 'discardColor') && !discardColor) return setPicker({ kind: 'discard', cardIds });
     if (last.color === 'wild' && last.value !== 'roulette' && !color) return setPicker({ kind: 'color', cardIds, discardColor });
-    const swaps = view.rules.sevenZero && last.value === 7 && view.hand.length > cardIds.length;
+    const swaps = ((view.rules.sevenZero && last.value === 7) || custom === 'swapHands') && view.hand.length > cardIds.length;
     if (swaps && swapWith === undefined) return setPicker({ kind: 'swap', cardIds, color });
     setPicker(null);
     setSelection([]);
@@ -263,7 +267,8 @@ export function GameTable({
     if (!playableIds.has(c.id)) return false;
     const leaves = (color: Color) => view.hand.filter((h) => h !== c && h.color !== color).length === 1;
     if (c.value === 'discardAll') return leaves(c.color as Color);
-    return c.value === 'wildDiscardAll' && sideColors.some(leaves);
+    const namesDiscard = c.value === 'wildDiscardAll' || customWildFor(view.rules, c.value)?.effect === 'discardColor';
+    return namesDiscard && sideColors.some(leaves);
   });
   const canCallUno =
     gameActive && !you.out && !you.calledUno &&
@@ -287,7 +292,8 @@ export function GameTable({
 
   return (
     <CardThemeContext.Provider value={cardThemeFor(view.variantId)}>
-    <div className={`table ${view.side === 'dark' ? 'table--dark' : ''} ${noMercy ? 'table--nomercy' : ''}`}>
+    <CustomWildsContext.Provider value={view.rules.customWilds}>
+    <div className={`table ${view.side === 'dark' ? 'table--dark' : ''} ${noMercy ? 'table--nomercy' : ''} ${giant ? 'table--giant' : ''}`}>
       <header className="table__header">
         <button type="button" className="btn btn--ghost btn--small" onClick={onExit}>{exitLabel}</button>
         <span className="table__round">
@@ -295,6 +301,7 @@ export function GameTable({
         </span>
         <span className="table__tools">
           {pointsMode && <span className="table__you-score">You: {view.scores[view.you]} pts</span>}
+          <button type="button" className="icon-btn" onClick={() => setShowThemes(true)} aria-label="Table theme" title="Table theme">🎨</button>
           <button type="button" className="icon-btn" onClick={() => setShowScores(true)} aria-label="Scores" title="Scores">🏆</button>
           <button type="button" className="icon-btn" onClick={() => setMuted(!muted)} aria-label={muted ? 'Turn sound on' : 'Mute sound'} title={muted ? 'Sound off' : 'Sound on'}>
             {muted ? '🔇' : '🔊'}
@@ -341,7 +348,7 @@ export function GameTable({
           <span className="draw-pile__count">{view.drawPileCount}</span>
         </button>
 
-        <div ref={discardRef} className="discard" style={{ ['--glow' as string]: CARD_COLORS[view.currentColor] }} aria-label={`Top card: ${describeCard(view.topCard)}`}>
+        <div ref={discardRef} className="discard" style={{ ['--glow' as string]: CARD_COLORS[view.currentColor] }} aria-label={`Top card: ${describeCard(view.topCard, view.rules)}`}>
           {pile.map((card, i) => (
             <div
               key={card.id}
@@ -447,11 +454,12 @@ export function GameTable({
       )}
       <Flights flights={flights} onDone={(id) => setFlights((f) => f.filter((x) => x.id !== id))} />
       {showScores && <ScoreboardModal view={view} onClose={() => setShowScores(false)} />}
+      {showThemes && <ThemePicker onClose={() => setShowThemes(false)} />}
 
       {picker?.kind === 'discard' && (
         <ColorPicker
           colors={sideColors}
-          title="Wild Discard All"
+          title={describeCard(cardById(picker.cardIds[picker.cardIds.length - 1]!), view.rules)}
           subtitle="Which color do you want to throw away? Every card of that color in your hand goes."
           onCancel={() => setPicker(null)}
           onPick={(discardColor) => submitPlay(picker.cardIds, undefined, undefined, discardColor)}
@@ -488,6 +496,7 @@ export function GameTable({
         <RoundOver view={view} actions={endActions} note={endNote} nextRoundAt={nextRoundAt} />
       )}
     </div>
+    </CustomWildsContext.Provider>
     </CardThemeContext.Provider>
   );
 }

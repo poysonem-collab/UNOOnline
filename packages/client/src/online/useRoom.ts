@@ -63,7 +63,7 @@ export function useRoom(joined: JoinedRoom) {
         setEvents((prev) => ({ seq: (prev?.seq ?? 0) + 1, events: update.events, at: Date.now() }));
       }
       const lines = update.events
-        .map((e) => describeEvent(e, update.view.players, update.view.you))
+        .map((e) => describeEvent(e, update.view.players, update.view.you, update.view.rules))
         .filter((t): t is string => t !== null)
         .map((text) => ({ id: logId.current++, text }));
       if (lines.length) setLog((prev) => [...prev, ...lines].slice(-30));

@@ -1,6 +1,7 @@
 import type { Card, CardFace, RuleSet } from '../types.js';
 import { buildDecks, cardPoints } from './classic/deck.js';
 import { buildFlipDecks, FLIP_DECK_SIZE, flipPoints } from './flip/deck.js';
+import { buildGiantDecks, GIANT_DECK_SIZE } from './giant/deck.js';
 import { buildNoMercyDecks, NO_MERCY_DECK_SIZE, noMercyPoints } from './nomercy/deck.js';
 
 /** What differs between games that share the classic engine: the cards and their points. */
@@ -31,6 +32,14 @@ export const DECKS: Record<string, DeckConfig> = {
     build: buildFlipDecks,
     points: flipPoints,
     canStart: (card) => card.color !== 'wild' && card.value !== 'flip',
+    pointsToWin: 500,
+    mercyLimit: null,
+  },
+  giant: {
+    size: GIANT_DECK_SIZE,
+    build: (deckCount, rng) => [buildGiantDecks(deckCount), rng],
+    points: cardPoints,
+    canStart: (card) => card.color !== 'wild',
     pointsToWin: 500,
     mercyLimit: null,
   },

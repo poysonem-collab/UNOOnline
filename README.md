@@ -34,6 +34,10 @@ takes up to a minute.
   - Points games play to 1,000 (numbers face value, colored action cards 20, wilds 50).
   - **Expansion Pack** (optional host rule): adds 10s (play again), Wild Discard All (pick a color to
     throw away, then the color in play) and Wild Reverse Draw 8. The pack's coins aren't included yet.
+- **Giant UNO**: the classic game with supersized cards, plus two blank wild cards to write your
+  own rules on. The host names each one and picks what it does: plain wild, everyone else draws 2,
+  shuffle hands (everyone's cards dealt back out evenly), swap hands, skip two players, play again,
+  or discard a color.
 
 Other modes are listed in the menu and unlocked as they're built.
 
@@ -55,6 +59,12 @@ players close to 25.
 In 4-player games with one bot of each level, they win roughly 10% / 24% / 30% / 35% of games
 (Easy / Normal / Hard / Expert), and each level beats the one below it head to head. No Mercy
 is wilder and rewards thinking ahead more: there it's about 9% / 18% / 27% / 46%.
+
+## Table themes
+
+Tap 🎨 (on the home screen or during a game) to change the table: Classic Felt, Ocean, Midnight,
+Sunset, Wooden Table, Neon Arcade or Candy. It only changes how the game looks for you, and it's
+remembered on your device.
 
 ## House rules
 
@@ -149,5 +159,7 @@ That server must list the Pages address in its `CORS_ORIGINS` setting (see `rend
 - [x] UNO Flip
 - [x] Four bot skill levels
 - [x] UNO Show 'Em No Mercy (plus the optional Expansion Pack cards)
+- [x] Table themes
+- [x] Giant UNO
 
 UNO is a trademark of Mattel. This is an unofficial fan project; the card art is drawn from scratch.

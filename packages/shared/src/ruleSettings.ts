@@ -1,5 +1,6 @@
 import { MAX_PLAYERS, type RuleSet } from './types.js';
 import { deckFor } from './variants/decks.js';
+import { sanitizeCustomWilds } from './variants/giant/customWilds.js';
 import type { Variant } from './variants/Variant.js';
 
 /** Fewer cards than this left after dealing means a second deck is needed. */
@@ -32,6 +33,8 @@ export function sanitizeRules(variant: Variant, input: unknown): RuleSet {
       if (value === 1 || value === 2) rules.deckCount = value;
     } else if (key === 'winCondition') {
       if (value === 'firstOut' || value === 'points500') rules.winCondition = value;
+    } else if (key === 'customWilds') {
+      rules.customWilds = sanitizeCustomWilds(value, variant.defaultRules.customWilds);
     } else if (typeof fallback === 'boolean' && typeof value === 'boolean') {
       (rules[key] as boolean) = value;
     }

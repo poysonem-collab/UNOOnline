@@ -44,7 +44,11 @@ export function soundsFor(events: GameEvent[], you: number): SoundName[] {
         sounds.push('skip');
         break;
       case 'discardedAll':
+      case 'shuffledHands':
         sounds.push('swap');
+        break;
+      case 'everyoneDrew':
+        sounds.push('penalty');
         break;
       case 'eliminated':
         sounds.push('catch');
@@ -78,6 +82,8 @@ export function burstFor(events: GameEvent[], you: number, names: string[]): Bur
     if (e.type === 'roulette') return { text: `${name(e.seat)} drew ${e.count}!`, kind: 'penalty' };
     if (e.type === 'skippedEveryone') return { text: 'Skip everyone!', kind: 'action' };
     if (e.type === 'playAgain') return { text: 'Play again!', kind: 'good' };
+    if (e.type === 'shuffledHands') return { text: 'Shuffle hands!', kind: 'action' };
+    if (e.type === 'everyoneDrew') return { text: `Everyone draws ${e.count}!`, kind: 'penalty' };
     if (e.type === 'discardedAll') return { text: `Discard all ${e.count + 1}!`, kind: 'good' };
     if (e.type === 'challenged') return { text: e.success ? 'Bluff caught!' : 'Challenge failed!', kind: 'penalty' };
     if (e.type === 'caughtUno') return { text: `${name(e.target)} caught!`, kind: 'penalty' };

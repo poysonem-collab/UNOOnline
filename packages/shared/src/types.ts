@@ -34,7 +34,10 @@ export type WildValue =
   | 'roulette'
   // No Mercy Expansion Pack
   | 'wildRev8'
-  | 'wildDiscardAll';
+  | 'wildDiscardAll'
+  // Giant UNO's blank wild cards, which do what the host wrote on them (see RuleSet.customWilds)
+  | 'custom1'
+  | 'custom2';
 export type CardValue = NumberValue | ActionValue | WildValue;
 
 /** One printed face of a card. `dark` marks UNO Flip's dark side (it changes how wilds look). */
@@ -76,10 +79,22 @@ export interface RuleSet {
   noActionFinish: boolean;
   /** UNO Show 'Em No Mercy: shuffle in the Expansion Pack cards (10s, Wild Discard All, Wild Reverse Draw 8). */
   noMercyExpansion: boolean;
+  /** Giant UNO: what the host wrote on each blank wild card (custom1, custom2). */
+  customWilds: CustomWild[];
   handSize: number;
   turnTimerSeconds: 0 | 15 | 30 | 60;
   deckCount: 1 | 2;
   winCondition: 'firstOut' | 'points500';
+}
+
+/** What a Giant UNO blank wild card can do (the host picks one for each card). */
+export const CUSTOM_EFFECTS = ['wild', 'everyoneDraws2', 'shuffleHands', 'swapHands', 'skipTwo', 'playAgain', 'discardColor'] as const;
+export type CustomEffect = (typeof CUSTOM_EFFECTS)[number];
+
+/** A blank wild card with the host's writing on it: a name, and the effect it stands for. */
+export interface CustomWild {
+  name: string;
+  effect: CustomEffect;
 }
 
 export const DEFAULT_RULES: RuleSet = {
@@ -92,6 +107,7 @@ export const DEFAULT_RULES: RuleSet = {
   challengeWild4: false,
   noActionFinish: false,
   noMercyExpansion: false,
+  customWilds: [],
   handSize: 7,
   turnTimerSeconds: 0,
   deckCount: 1,
@@ -208,6 +224,8 @@ export type GameEvent =
   | { type: 'colorChosen'; seat: number; color: Color }
   | { type: 'skippedEveryone'; seat: number }
   | { type: 'playAgain'; seat: number }
+  | { type: 'shuffledHands'; seat: number }
+  | { type: 'everyoneDrew'; seat: number; count: number }
   | { type: 'discardedAll'; seat: number; color: Color; count: number }
   | { type: 'roulette'; seat: number; color: Color; count: number }
   | { type: 'eliminated'; seat: number }

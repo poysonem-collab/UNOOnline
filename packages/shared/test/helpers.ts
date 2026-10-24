@@ -5,7 +5,7 @@ let nextId = 0;
 /** Build a card from short notation: 'r5', 'gskip', 'breverse', 'ydraw2', 'wild', 'wild4', 'wild10', 'roulette'. */
 export function c(spec: string): Card {
   const id = `t${nextId++}`;
-  if (spec.startsWith('wild') || spec === 'roulette') return { id, color: 'wild', value: spec as WildValue };
+  if (spec.startsWith('wild') || spec === 'roulette' || spec.startsWith('custom')) return { id, color: 'wild', value: spec as WildValue };
   const color = ({ r: 'red', y: 'yellow', g: 'green', b: 'blue' } as const)[spec[0] as 'r'];
   const rest = spec.slice(1);
   const value = /^\d+$/.test(rest) ? (Number(rest) as 0) : (rest as 'skip' | 'reverse' | 'draw2');

@@ -8,6 +8,7 @@ import {
   type Card,
   type CardFace,
   type Color,
+  type CustomEffect,
   type GameEvent,
   type GameState,
   type PlayerInfo,
@@ -15,6 +16,7 @@ import {
   type RuleSet,
 } from '../../types.js';
 import { deckFor } from '../decks.js';
+import { customWildFor } from '../giant/customWilds.js';
 import { activeSeats, canJumpIn, canPlay, contextOf, drawAmount, isPlayable, isWildDraw, seatAfter, topCard } from './rules.js';
 
 // This engine runs classic UNO, UNO Flip and UNO Show 'Em No Mercy; the deck config
@@ -209,10 +211,12 @@ function play(
   const namesColor = last.color === 'wild' && last.value !== 'roulette';
   if (namesColor && !chosenColor) return 'Choose a color for the wild card';
   if (namesColor && !colorsForSide(state.side).includes(chosenColor!)) return 'Choose one of the colors in play';
-  const discardsColor = last.value === 'wildDiscardAll';
+  // Giant UNO's blank wilds do whatever the host wrote on them.
+  const custom = customWildFor(rules, last.value)?.effect;
+  const discardsColor = last.value === 'wildDiscardAll' || custom === 'discardColor';
   if (discardsColor && (!discardColor || !colorsForSide(state.side).includes(discardColor))) return 'Choose a color to discard';
 
-  const swaps = rules.sevenZero && last.value === 7 && handAfter > 0;
+  const swaps = ((rules.sevenZero && last.value === 7) || custom === 'swapHands') && handAfter > 0;
   if (swaps) {
     if (swapWith === undefined || swapWith === seat || !state.players[swapWith] || state.out[swapWith]) {
       return 'Choose a player to swap hands with';
@@ -322,6 +326,10 @@ function applyEffect(
       state.currentPlayer = next;
       return false;
 
+    case 'custom1':
+    case 'custom2':
+      return customEffect(state, seat, customWildFor(rules, card.value)!.effect, extra, events);
+
     case 10:
       // No Mercy Expansion: a 10 is a number card that lets you play again.
       events.push({ type: 'playAgain', seat });
@@ -329,19 +337,12 @@ function applyEffect(
       return false;
 
     case 'discardAll':
-    case 'wildDiscardAll': {
-      // No Mercy: every other card of this color goes too (under the Discard All, which stays on top).
+    case 'wildDiscardAll':
+      // No Mercy: every other card of this color goes too.
       // The Expansion's Wild Discard All names the color to throw away (and then the color in play).
-      const color = card.value === 'wildDiscardAll' ? extra.discardColor! : (card.color as Color);
-      const same = player.hand.filter((c) => c.color === color);
-      if (same.length) {
-        player.hand = player.hand.filter((c) => c.color !== color);
-        state.discardPile.splice(state.discardPile.length - 1, 0, ...same);
-        events.push({ type: 'discardedAll', seat, color, count: same.length });
-      }
+      discardColor(state, seat, card.value === 'wildDiscardAll' ? extra.discardColor! : (card.color as Color), events);
       state.currentPlayer = next;
       return false;
-    }
 
     case 'flip':
       flipEverything(state, seat, events);
@@ -367,6 +368,79 @@ function applyEffect(
       state.currentPlayer = next;
       return false;
   }
+}
+
+/** Throws away every card of `color` from a hand, under the card just played (which stays on top). */
+function discardColor(state: GameState, seat: number, color: Color, events: GameEvent[]): void {
+  const player = state.players[seat]!;
+  const same = player.hand.filter((c) => c.color === color);
+  if (same.length === 0) return;
+  player.hand = player.hand.filter((c) => c.color !== color);
+  state.discardPile.splice(state.discardPile.length - 1, 0, ...same);
+  events.push({ type: 'discardedAll', seat, color, count: same.length });
+}
+
+/** Giant UNO: a blank wild card does what the host wrote on it. Returns true if hands changed owners. */
+function customEffect(
+  state: GameState,
+  seat: number,
+  effect: CustomEffect,
+  extra: { swapWith?: number; discardColor?: Color },
+  events: GameEvent[],
+): boolean {
+  const next = seatAfter(state, seat);
+  const others = activeSeats(state).filter((i) => i !== seat);
+  // Going out on it ends the round straight away: there's nothing left to swap or shuffle.
+  const out = state.players[seat]!.hand.length === 0;
+  state.currentPlayer = next;
+  switch (effect) {
+    case 'everyoneDraws2':
+      events.push({ type: 'everyoneDrew', seat, count: 2 });
+      for (const other of others) drawCards(state, other, 2, events);
+      return false;
+    case 'shuffleHands':
+      if (out) return false;
+      shuffleHands(state, seat, events);
+      return true;
+    case 'swapHands':
+      if (out || extra.swapWith === undefined) return false;
+      swapHands(state, seat, extra.swapWith);
+      events.push({ type: 'swapped', seat, with: extra.swapWith });
+      return true;
+    case 'skipTwo':
+      // With three players or fewer, that's everyone else: you go again.
+      for (const skipped of others.length <= 2 ? others : [next, seatAfter(state, seat, 2)]) events.push({ type: 'skipped', seat: skipped });
+      state.currentPlayer = others.length <= 2 ? seat : seatAfter(state, seat, 3);
+      return false;
+    case 'playAgain':
+      events.push({ type: 'playAgain', seat });
+      state.currentPlayer = seat;
+      return false;
+    case 'discardColor':
+      discardColor(state, seat, extra.discardColor!, events);
+      return false;
+    case 'wild':
+      return false;
+  }
+}
+
+/** Everyone's cards are shuffled together and dealt back out one at a time, starting with the next player. */
+function shuffleHands(state: GameState, seat: number, events: GameEvent[]): void {
+  const seats = activeSeats(state);
+  const pool = seats.flatMap((i) => state.players[i]!.hand);
+  state.rng = shuffle(pool, state.rng);
+  for (const i of seats) {
+    state.players[i]!.hand = [];
+    state.players[i]!.calledUno = false;
+    state.voids[i] = [];
+    state.named[i] = null;
+  }
+  let to = seatAfter(state, seat);
+  for (const card of pool) {
+    state.players[to]!.hand.push(card);
+    to = seatAfter(state, to);
+  }
+  events.push({ type: 'shuffledHands', seat });
 }
 
 /** A draw card: the next player takes the cards and loses their turn, or (when stacking or challenging) gets to respond. */
@@ -537,7 +611,8 @@ function challenge(state: GameState, seat: number, events: GameEvent[]): string 
 function callUno(state: GameState, seat: number, events: GameEvent[]): string | null {
   const player = state.players[seat]!;
   // Playing several cards at once (or a Discard All) can take you from many cards straight to one.
-  const bigPlays = state.rules.stackSameNumber || state.variantId === 'no-mercy';
+  const bigPlays =
+    state.rules.stackSameNumber || state.variantId === 'no-mercy' || state.rules.customWilds.some((c) => c.effect === 'discardColor');
   if (player.hand.length > 2 && !bigPlays) return 'You can only call UNO with two cards or fewer';
   player.calledUno = true;
   if (state.unoVulnerable === seat) state.unoVulnerable = null;

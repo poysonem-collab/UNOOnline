@@ -40,8 +40,8 @@ export const VARIANT_CATALOG: VariantListing[] = [
   {
     id: 'giant',
     name: 'Giant UNO',
-    description: 'Oversized cards with write-your-own rule cards.',
-    locked: true,
+    description: 'The classic game, supersized: giant cards, plus blank wild cards you write your own rules on.',
+    locked: false,
   },
   {
     id: 'attack',

@@ -2,6 +2,7 @@ import { ALL_COLORS, colorsForSide, type Action, type Card, type CardFace, type 
 import { deckFor } from '../decks.js';
 import type { BotDifficulty } from '../Variant.js';
 import { canChallenge } from './engine.js';
+import { customWildFor } from '../giant/customWilds.js';
 import { lookaheadSupported, rateCandidates, searchFor, type Candidate } from './lookahead.js';
 import { drawAmount, isWildDraw, jumpInCards, playableCards, seatAfter } from './rules.js';
 
@@ -216,10 +217,13 @@ function pickNormal(state: GameState, k: Knowledge, playable: Card[]): Card {
     let s = 0;
     if (card.color === 'wild') s -= 100; // hold wilds for when nothing else works...
     if (card.value === 'discardAll') s += k.hand.filter((c) => c !== card && c.color === card.color).length * 12;
-    if (card.value === 'wildDiscardAll') s += mostHeld(k.hand.filter((c) => c !== card), k.colors).count * 12;
+    const custom = customWildFor(state.rules, card.value)?.effect;
+    if (card.value === 'wildDiscardAll' || custom === 'discardColor') s += mostHeld(k.hand.filter((c) => c !== card), k.colors).count * 12;
+    if (custom === 'swapHands' || custom === 'shuffleHands') s += fewestOther < k.hand.length - 2 ? 150 : -30;
+    if (custom === 'everyoneDraws2' || custom === 'skipTwo') s += 40;
     if (nextSize <= 2 && attack) s += 200; // ...unless the next player is about to win
     if (state.pendingDraw > 0) s += 50 - drawAmount(card) * 8;
-    if (card.value === 'skipAll' || card.value === 10) s += 25; // another turn
+    if (card.value === 'skipAll' || card.value === 10 || custom === 'playAgain') s += 25; // another turn
     if (state.rules.sevenZero && card.value === 7) s += fewestOther < k.hand.length - 2 ? 150 : -30;
     if (typeof card.value === 'number') s += card.value;
     else if (card.color !== 'wild') s += 15;
@@ -264,7 +268,7 @@ function lookAhead(state: GameState, k: Knowledge, moves: Card[][], random: () =
   const candidates: Candidate[] = moves.map((cards) => {
     const last = cards[cards.length - 1]!;
     const rest = k.hand.filter((c) => !cards.includes(c));
-    if (last.value === 'wildDiscardAll') return { cards, color: wildDiscardChoice(k, rest, 'expert', random).color };
+    if (discardsAColor(state, last)) return { cards, color: wildDiscardChoice(k, rest, 'expert', random).color };
     return last.color === 'wild' ? { cards, color: chooseColor(k, rest, 'expert', random) } : { cards };
   });
   if (state.phase === 'playDrawn' || state.pendingDraw > 0) candidates.push({ cards: [] });
@@ -278,7 +282,7 @@ function lookAhead(state: GameState, k: Knowledge, moves: Card[][], random: () =
 function scoreMove(state: GameState, k: Knowledge, move: Card[], level: BotDifficulty): number {
   const expert = level === 'expert';
   const last = move[move.length - 1]!;
-  const dumped = last.value === 'wildDiscardAll' ? wildDiscardChoice(k, k.hand.filter((c) => !move.includes(c)), level, () => 0.5) : null;
+  const dumped = discardsAColor(state, last) ? wildDiscardChoice(k, k.hand.filter((c) => !move.includes(c)), level, () => 0.5) : null;
   // What's left in our hand after this play (a Wild Discard All takes a whole color with it).
   const rest = k.hand.filter((c) => !move.includes(c) && c.color !== dumped?.discardColor);
   const color = dumped ? dumped.color : last.color === 'wild' ? chooseColor(k, rest, level, () => 0.5) : last.color;
@@ -312,6 +316,19 @@ function scoreMove(state: GameState, k: Knowledge, move: Card[], level: BotDiffi
     if (nextSize <= 2) s += 40;
   }
   if (value === 'skipAll' || value === 10) s += 20; // another turn
+
+  // Giant UNO's blank wilds: what's written on them decides what they're worth.
+  const custom = customWildFor(state.rules, value)?.effect;
+  if (custom && rest.length > 0) {
+    const othersIn = k.sizes.filter((size, i) => i !== k.seat && size > 0);
+    const average = othersIn.reduce((a, b) => a + b, 0) / Math.max(1, othersIn.length);
+    if (custom === 'everyoneDraws2') s += othersIn.length * 6 + (minOther(k) <= 2 ? 40 : 0);
+    if (custom === 'skipTwo') s += multiPlayer ? 18 + (nextSize <= 2 ? 50 : 0) : 20;
+    if (custom === 'playAgain') s += 20;
+    if (custom === 'swapHands') s += rest.length - minOther(k) > 0 ? (rest.length - minOther(k)) * 10 : -40;
+    // Shuffling hands evens them out: good when ours is the big one.
+    if (custom === 'shuffleHands') s += (rest.length - average) * 8;
+  }
 
   // Stacking: pass on the smallest draw card and keep the big ones, unless the next player is nearly out.
   if (state.pendingDraw > 0) s += nextSize <= 2 ? drawAmount(last) * 5 : 20 - drawAmount(last) * 4;
@@ -386,6 +403,11 @@ function chooseColor(k: Knowledge, hand: Card[], level: BotDifficulty, random: (
   return k.colors.find((c) => score(c) === best)!;
 }
 
+/** Cards that throw away a whole color the player names: Wild Discard All, or a blank wild written that way. */
+function discardsAColor(state: GameState, card: Card): boolean {
+  return card.value === 'wildDiscardAll' || customWildFor(state.rules, card.value)?.effect === 'discardColor';
+}
+
 /** The color we hold most of (first in color order on a tie). */
 function mostHeld(hand: Card[], colors: readonly Color[]): { color: Color; count: number } {
   const counts = countColors(hand);
@@ -443,12 +465,13 @@ function withUnoCall(state: GameState, seat: number, handAfter: number, profile:
 function playAction(state: GameState, k: Knowledge, cards: Card[], level: BotDifficulty, random: () => number): Action {
   const last = cards[cards.length - 1]!;
   const action: Action = { type: 'play', cardIds: cards.map((c) => c.id) };
-  if (last.value === 'wildDiscardAll') {
+  if (discardsAColor(state, last)) {
     Object.assign(action, wildDiscardChoice(k, k.hand.filter((c) => !cards.includes(c)), level, random));
   } else if (last.color === 'wild') {
     action.color = chooseColor(k, k.hand.filter((c) => !cards.includes(c)), level, random);
   }
-  if (state.rules.sevenZero && last.value === 7 && k.hand.length > cards.length) {
+  const swaps = (state.rules.sevenZero && last.value === 7) || customWildFor(state.rules, last.value)?.effect === 'swapHands';
+  if (swaps && k.hand.length > cards.length) {
     const others = k.sizes.map((_, i) => i).filter((i) => i !== k.seat && !state.out[i]);
     action.swapWith = level === 'easy' ? pickRandom(others, random) : others.reduce((a, b) => (k.sizes[b]! < k.sizes[a]! ? b : a));
   }

@@ -1,5 +1,5 @@
 import { createContext, useContext, useId, type ReactNode } from 'react';
-import { describeCard, type CardFace, type Color } from '@uno/shared';
+import { customWildFor, customWildTitle, describeCard, type CardFace, type Color, type CustomWild } from '@uno/shared';
 
 export const CARD_COLORS: Record<Color, string> = {
   red: '#d72600',
@@ -28,6 +28,9 @@ export type CardTheme = 'classic' | 'nomercy';
 export const CardThemeContext = createContext<CardTheme>('classic');
 export const cardThemeFor = (variantId: string): CardTheme => (variantId === 'no-mercy' ? 'nomercy' : 'classic');
 
+/** Giant UNO: what the host wrote on the blank wild cards in this game. */
+export const CustomWildsContext = createContext<CustomWild[]>([]);
+
 /** Cards that only exist in No Mercy always get its look. */
 const NO_MERCY_ONLY = new Set<Value>(['draw4', 'discardAll', 'wildRev4', 'wild6', 'wild10', 'roulette', 10, 'wildRev8', 'wildDiscardAll']);
 
@@ -40,13 +43,15 @@ interface CardProps {
 }
 
 export function Card({ card, onClick, disabled, highlight, className = '' }: CardProps) {
+  const customWilds = useContext(CustomWildsContext);
   const classes = ['card', onClick && !disabled ? 'card--clickable' : '', disabled ? 'card--disabled' : '', highlight ? 'card--highlight' : '', className];
   const art = <CardArt card={card} />;
+  const label = describeCard(card, { customWilds });
   if (!onClick) {
-    return <div className={classes.join(' ')} aria-label={describeCard(card)}>{art}</div>;
+    return <div className={classes.join(' ')} aria-label={label}>{art}</div>;
   }
   return (
-    <button type="button" className={classes.join(' ')} onClick={onClick} disabled={disabled} aria-label={describeCard(card)}>
+    <button type="button" className={classes.join(' ')} onClick={onClick} disabled={disabled} aria-label={label}>
       {art}
     </button>
   );
@@ -81,6 +86,10 @@ export function CardBack({ className = '' }: { className?: string }) {
  */
 function CardArt({ card }: { card: CardFace }) {
   const theme = useContext(CardThemeContext);
+  const customWilds = useContext(CustomWildsContext);
+  if (card.value === 'custom1' || card.value === 'custom2') {
+    return <BlankWildArt title={customWildTitle(customWildFor({ customWilds }, card.value)!)} />;
+  }
   if (theme === 'nomercy' || NO_MERCY_ONLY.has(card.value)) return <NoMercyArt card={card} />;
   const dark = Boolean(card.dark);
   if (card.color === 'wild') return <WildArt value={card.value} dark={dark} />;
@@ -479,5 +488,46 @@ function ColorReverse() {
       <circle cx="-0.3" cy="0.5" r="0.12" fill={CARD_COLORS.yellow} />
       <circle cx="0.3" cy="-0.5" r="0.12" fill={CARD_COLORS.green} />
     </g>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Giant UNO's blank wild cards, with the host's writing on them.
+
+/** Splits writing into at most three short lines to fit the oval. */
+function wrapWriting(text: string): string[] {
+  const lines: string[] = [];
+  for (const word of text.split(' ')) {
+    const last = lines[lines.length - 1];
+    if (last !== undefined && (last + ' ' + word).length <= 10) lines[lines.length - 1] = `${last} ${word}`;
+    else lines.push(word);
+  }
+  return lines.length <= 3 ? lines : [...lines.slice(0, 2), lines.slice(2).join(' ')];
+}
+
+function BlankWildArt({ title }: { title: string }) {
+  const lines = wrapWriting(title);
+  const longest = Math.max(...lines.map((l) => l.length));
+  const size = Math.min(17, 112 / Math.max(longest, 1));
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="card__svg">
+      <Frame face={BLACK} />
+      <ellipse cx="60" cy="90" rx="40" ry="64" transform={OVAL_TILT} fill="#fffdf4" stroke="#fff" strokeWidth="3" />
+      {/* Ruled lines, like a card made for writing on. */}
+      <g stroke="#9ec5ff" strokeWidth="0.8" opacity="0.7">
+        {[70, 84, 98, 112].map((y) => <line key={y} x1="30" x2="90" y1={y} y2={y} />)}
+      </g>
+      <g transform="translate(60 90) rotate(-8)">
+        {lines.map((line, i) => (
+          <text
+            key={i} x="0" y={(i - (lines.length - 1) / 2) * size * 1.15 + size * 0.35}
+            textAnchor="middle" fontSize={size} className="card__writing" fill="#1f3c88"
+          >
+            {line}
+          </text>
+        ))}
+      </g>
+      <Corners><FourColorOval rx={7} ry={11} border={1.5} colors={LIGHT_WILD} /></Corners>
+    </svg>
   );
 }

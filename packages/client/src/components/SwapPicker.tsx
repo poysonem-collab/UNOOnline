@@ -2,7 +2,8 @@ import type { PlayerView } from '@uno/shared';
 
 /** 7-0: choose who to swap hands with. */
 export function SwapPicker({ view, onPick, onCancel }: { view: PlayerView; onPick: (seat: number) => void; onCancel: () => void }) {
-  const others = view.players.map((p, seat) => ({ ...p, seat })).filter((p) => p.seat !== view.you);
+  // Knocked-out players (No Mercy) have no hand to swap.
+  const others = view.players.map((p, seat) => ({ ...p, seat })).filter((p) => p.seat !== view.you && !p.out);
   return (
     <div className="modal" role="dialog" aria-label="Swap hands" onClick={onCancel}>
       <div className="modal__box" onClick={(e) => e.stopPropagation()}>
