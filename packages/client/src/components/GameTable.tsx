@@ -371,6 +371,7 @@ export function GameTable({
       </section>
 
       <section className="status" aria-live="polite">
+        <div className="status__panel">
         <div className={`status__turn ${yourTurn ? 'status__turn--you' : ''}`}>
           {status}
           {canJumpIn && <span className="status__jump">You can jump in!</span>}
@@ -381,6 +382,7 @@ export function GameTable({
         <ul className="log">
           {log.slice(-3).map((entry) => <li key={entry.id}>{entry.text}</li>)}
         </ul>
+        </div>
       </section>
 
       <section className="you">
