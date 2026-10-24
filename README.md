@@ -53,7 +53,8 @@ players close to 25.
 | Expert | A card counter | All of that, plus it remembers every card played and the colors opponents named, and thinks a few turns ahead by imagining how the game could go from each move. In Flip it reads everyone's card backs before flipping. |
 
 In 4-player games with one bot of each level, they win roughly 10% / 24% / 30% / 35% of games
-(Easy / Normal / Hard / Expert), and each level beats the one below it head to head.
+(Easy / Normal / Hard / Expert), and each level beats the one below it head to head. No Mercy
+is wilder and rewards thinking ahead more: there it's about 9% / 18% / 27% / 46%.
 
 ## House rules
 
