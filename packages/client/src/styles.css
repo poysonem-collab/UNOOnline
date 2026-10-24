@@ -372,6 +372,8 @@ button:disabled { cursor: not-allowed; }
 .draw-pile:not(:disabled) .card:last-of-type { box-shadow: 0 0 0 3px var(--accent), 0 4px 12px rgba(0, 0, 0, 0.5); }
 .draw-pile:disabled { cursor: default; }
 .draw-pile__under { position: absolute; top: 4px; left: 4px; }
+/* Positioned too, so it paints above the card underneath. */
+.draw-pile__top { position: relative; }
 .draw-pile__count {
   position: absolute;
   bottom: -0.6rem;
@@ -521,6 +523,9 @@ button:disabled { cursor: not-allowed; }
   :root { --card-w: 64px; --table-card-w: 76px; }
   .opponent { min-width: 0; padding: 0.35rem 0.5rem; }
   .opponent__fan { display: none; }
+  /* In UNO Flip the backs are real information, so keep a compact fan. */
+  .opponent__fan--faces { display: flex; max-width: 64px; overflow: hidden; }
+  .opponent__fan--faces .card + .card { margin-left: -15px; }
   .opponent__top { max-width: 90px; }
 }
 
@@ -529,12 +534,11 @@ button:disabled { cursor: not-allowed; }
 }
 
 .gallery {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
   padding: 16px;
   --card-w: 100px;
 }
+.gallery__section h2 { margin: 1.2rem 0 0.6rem; }
+.gallery__cards { display: flex; flex-wrap: wrap; gap: 12px; }
 
 /* ---------- Online: setup & lobby ---------- */
 
@@ -849,3 +853,19 @@ button:disabled { cursor: not-allowed; }
 .history th { text-align: left; color: var(--muted); font-weight: 600; padding: 0.3rem 0.5rem; }
 .history td { padding: 0.35rem 0.5rem; border-top: 1px solid rgba(255, 255, 255, 0.08); text-align: left; }
 .history td:last-child, .history th:last-child { text-align: right; }
+
+/* ---------- UNO Flip ---------- */
+
+.table--dark {
+  background: radial-gradient(ellipse at center, #3b1d52 0%, #12081a 100%);
+  transition: background 0.6s;
+}
+.table--dark .direction svg { stroke: #c9a7ff; }
+.hand--flip .card--hand { animation: flip-in 0.45s ease-out both; }
+@keyframes flip-in {
+  from { transform: perspective(600px) rotateY(90deg); }
+}
+.burst--flip {
+  color: #d7b4ff;
+  font-size: clamp(2.4rem, 10vw, 4.6rem);
+}

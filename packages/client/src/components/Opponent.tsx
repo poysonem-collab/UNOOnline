@@ -1,5 +1,5 @@
 import type { PlayerView } from '@uno/shared';
-import { CardBack } from './Card';
+import { Card, CardBack } from './Card';
 
 interface OpponentProps {
   player: PlayerView['players'][number];
@@ -24,10 +24,11 @@ export function Opponent({ player, isTurn, canCatch, score, away, onCatch, elRef
         <span className="opponent__name">{player.name}</span>
       </div>
       <div className="opponent__cards" aria-label={`${player.handCount} cards`}>
-        <div className="opponent__fan" style={{ ['--n' as string]: fan }}>
-          {Array.from({ length: fan }, (_, i) => (
-            <CardBack key={i} className="card--mini" />
-          ))}
+        <div className={`opponent__fan ${player.otherSides ? 'opponent__fan--faces' : ''}`} style={{ ['--n' as string]: fan }}>
+          {/* UNO Flip: you see the backs of their cards, which are real faces. */}
+          {player.otherSides
+            ? player.otherSides.slice(0, MAX_FAN).map((face, i) => <Card key={i} card={face} className="card--mini" />)
+            : Array.from({ length: fan }, (_, i) => <CardBack key={i} className="card--mini" />)}
         </div>
         <span className="opponent__count">{player.handCount}</span>
       </div>

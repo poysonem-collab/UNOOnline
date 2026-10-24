@@ -228,10 +228,10 @@ describe('challenging a Wild +4', () => {
     const state = makeState({ hands: [['wild4', 'b2'], ['y1'], ['g1']], top: 'r5' });
     const s1 = ok(play(state, 0, [0], { color: 'blue' }));
     expect(s1.pendingDraw).toBe(0);
-    expect(err(applyAction(s1, 2, { type: 'challenge' }))).toMatch(/no Wild \+4/);
+    expect(err(applyAction(s1, 2, { type: 'challenge' }))).toMatch(/no wild draw card/);
 
     const stack = makeState({ hands: [['rdraw2', 'b2'], ['y1'], ['g1']], top: 'r5', rules: { ...rules, stackDraws: true } });
-    expect(err(applyAction(ok(play(stack, 0, [0])), 1, { type: 'challenge' }))).toMatch(/no Wild \+4/);
+    expect(err(applyAction(ok(play(stack, 0, [0])), 1, { type: 'challenge' }))).toMatch(/no wild draw card/);
   });
 });
 

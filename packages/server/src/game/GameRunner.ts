@@ -231,12 +231,14 @@ export class GameRunner {
     }, min * 0.6 + random() * (max - min));
   }
 
-  /** When the turn timer runs out: draw, and keep the card. */
+  /** When the turn timer runs out: draw, and keep the card (or pick a color for them). */
   private timeOut(): void {
     if (!this.isActive()) return;
     const seat = this.state.currentPlayer;
     const id = this.ids[seat]!;
-    if (this.state.phase === 'playing') {
+    if (this.state.phase === 'chooseColor') {
+      this.playForSeat(seat, 'normal');
+    } else if (this.state.phase === 'playing') {
       const drew = this.variant.applyAction(this.state, seat, { type: 'draw' });
       if (!drew.ok) return;
       this.state = drew.state;
@@ -290,6 +292,6 @@ export class GameRunner {
   }
 
   private isActive(): boolean {
-    return this.state.phase === 'playing' || this.state.phase === 'playDrawn';
+    return this.state.phase === 'playing' || this.state.phase === 'playDrawn' || this.state.phase === 'chooseColor';
   }
 }

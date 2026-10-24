@@ -1,4 +1,4 @@
-import { cardPoints, type PlayerView } from '@uno/shared';
+import { cardPoints, flipPoints, type PlayerView } from '@uno/shared';
 import { Card } from './Card';
 
 const POINTS_TO_WIN = 500;
@@ -36,8 +36,10 @@ export function RevealedHands({ view }: { view: PlayerView }) {
   const hands = view.revealedHands;
   if (!hands) return null;
   const winner = view.phase === 'gameOver' ? view.gameWinner : view.roundWinner;
+  // UNO Flip scores by its own values, for the side in play.
+  const pointsOf = view.side ? flipPoints : cardPoints;
   const rows = hands
-    .map((hand, seat) => ({ seat, hand, points: hand.reduce((s, c) => s + cardPoints(c), 0) }))
+    .map((hand, seat) => ({ seat, hand, points: hand.reduce((s, c) => s + pointsOf(c), 0) }))
     .sort((a, b) => (a.seat === winner ? -1 : b.seat === winner ? 1 : a.points - b.points));
   const total = rows.reduce((s, r) => s + r.points, 0);
 

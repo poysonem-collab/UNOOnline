@@ -158,7 +158,7 @@ export function Setup({ variantId, initialTab, initialCode, notice, onStart, onJ
             <Segmented value={difficulty} options={[['easy', 'Easy'], ['normal', 'Normal']]} onChange={setDifficulty} />
           </div>
 
-          <RulesPanel rules={rules} onChange={setRules} playerCount={playerCount} />
+          <RulesPanel variantId={variantId} rules={rules} onChange={setRules} playerCount={playerCount} />
 
           <button type="button" className="btn btn--primary btn--big" onClick={startBots}>Start game</button>
         </>

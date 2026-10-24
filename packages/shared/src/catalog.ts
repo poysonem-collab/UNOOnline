@@ -28,8 +28,8 @@ export const VARIANT_CATALOG: VariantListing[] = [
   {
     id: 'flip',
     name: 'UNO Flip',
-    description: 'Double-sided cards. A Flip card switches everyone to the dark side.',
-    locked: true,
+    description: 'Double-sided cards. A Flip card turns everything over to the harsher dark side.',
+    locked: false,
   },
   {
     id: 'all-wild',

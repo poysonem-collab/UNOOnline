@@ -1,10 +1,12 @@
 import { shuffle } from '../../rng.js';
 import {
+  colorsForSide,
   MAX_PLAYERS,
   MIN_PLAYERS,
   type Action,
   type ActionResult,
   type Card,
+  type CardFace,
   type Color,
   type GameEvent,
   type GameState,
@@ -12,23 +14,24 @@ import {
   type PlayerView,
   type RuleSet,
 } from '../../types.js';
-import { buildDecks, cardPoints } from './deck.js';
-import { canJumpIn, canPlay, contextOf, isPlayable, seatAfter, topCard } from './rules.js';
+import { deckFor } from '../decks.js';
+import { canJumpIn, canPlay, contextOf, drawAmount, isPlayable, isWildDraw, seatAfter, topCard } from './rules.js';
 
-const DECK_SIZE = 108;
+// This engine runs classic UNO and UNO Flip; the deck config (see ../decks.ts) holds the differences.
+
 const POINTS_TO_WIN = 500;
 /** Extra cards a failed +4 challenge costs the challenger. */
 const CHALLENGE_PENALTY = 2;
 
-export function createGame(players: PlayerInfo[], rules: RuleSet, seed: number): GameState {
+export function createGame(players: PlayerInfo[], rules: RuleSet, seed: number, variantId = 'classic'): GameState {
   if (players.length < MIN_PLAYERS || players.length > MAX_PLAYERS) {
     throw new Error(`Need ${MIN_PLAYERS}-${MAX_PLAYERS} players`);
   }
-  if (players.length * rules.handSize >= rules.deckCount * DECK_SIZE - 10) {
+  if (players.length * rules.handSize >= rules.deckCount * deckFor(variantId).size - 10) {
     throw new Error('Not enough cards for this hand size; use more decks');
   }
   const state: GameState = {
-    variantId: 'classic',
+    variantId,
     rules,
     players: players.map((p) => ({ ...p, hand: [], calledUno: false })),
     drawPile: [],
@@ -75,17 +78,23 @@ export function applyAction(prev: GameState, seat: number, action: Action): Acti
 }
 
 export function getPlayerView(state: GameState, seat: number): PlayerView {
+  const twoSided = state.side !== undefined;
   return {
     you: seat,
-    hand: state.players[seat]?.hand ?? [],
-    players: state.players.map((p) => ({
+    // You hold your cards facing you, so you can't see their backs...
+    hand: (state.players[seat]?.hand ?? []).map(({ other: _other, ...card }) => card as Card),
+    players: state.players.map((p, i) => ({
       id: p.id,
       name: p.name,
       isBot: p.isBot,
       handCount: p.hand.length,
       calledUno: p.calledUno,
+      // ...but everyone else's backs face you.
+      ...(twoSided && i !== seat ? { otherSides: p.hand.map((c) => c.other!) } : {}),
     })),
     topCard: topCard(state),
+    side: state.side ?? null,
+    drawPileOther: state.drawPile[state.drawPile.length - 1]?.other ?? null,
     currentColor: state.currentColor,
     currentPlayer: state.currentPlayer,
     direction: state.direction,
@@ -105,7 +114,7 @@ export function getPlayerView(state: GameState, seat: number): PlayerView {
   };
 }
 
-/** The current player can challenge the Wild +4 waiting on them. */
+/** The current player can challenge the Wild +4 (or Wild Draw Two) waiting on them. */
 export function canChallenge(state: GameState): boolean {
   return state.rules.challengeWild4 && state.pendingDraw > 0 && state.wild4Check !== null;
 }
@@ -131,6 +140,8 @@ function dispatch(state: GameState, seat: number, action: Action, events: GameEv
       return catchUno(state, seat, action.target, events);
     case 'challenge':
       return challenge(state, seat, events);
+    case 'chooseColor':
+      return chooseColor(state, seat, action.color, events);
   }
 }
 
@@ -144,6 +155,7 @@ function play(
   const player = state.players[seat]!;
   const jumpingIn = seat !== state.currentPlayer;
   if (jumpingIn && !rules.jumpIn) return 'It is not your turn';
+  if (state.phase === 'chooseColor') return jumpingIn ? 'It is not your turn' : 'Choose a color first';
 
   // Every card must be in your hand, once.
   if (cardIds.length === 0) return 'Choose a card to play';
@@ -185,6 +197,7 @@ function play(
     return 'Your last card has to be a number card';
   }
   if (last.color === 'wild' && !chosenColor) return 'Choose a color for the wild card';
+  if (last.color === 'wild' && !colorsForSide(state.side).includes(chosenColor!)) return 'Choose one of the colors in play';
 
   const swaps = rules.sevenZero && last.value === 7 && handAfter > 0;
   if (swaps) {
@@ -194,8 +207,7 @@ function play(
   }
 
   // A +4 is only allowed with no card of the current color (checked if it can be challenged).
-  const wild4Illegal =
-    last.value === 'wild4' && player.hand.some((c) => !cards.includes(c) && c.color === state.currentColor);
+  const wild4Illegal = isWildDraw(last) && player.hand.some((c) => !cards.includes(c) && c.color === state.currentColor);
 
   // The play is legal: carry it out.
   state.unoVulnerable = null;
@@ -239,6 +251,12 @@ function applyEffect(
       state.currentPlayer = seatAfter(state, seat, 2);
       return false;
 
+    case 'skipAll':
+      // Everyone else is skipped: the same player goes again.
+      events.push({ type: 'skippedEveryone', seat });
+      state.currentPlayer = seat;
+      return false;
+
     case 'reverse':
       state.direction = state.direction === 1 ? -1 : 1;
       events.push({ type: 'reversed', direction: state.direction });
@@ -251,14 +269,17 @@ function applyEffect(
       }
       return false;
 
+    case 'draw1':
     case 'draw2':
+    case 'draw5':
+    case 'wild2':
     case 'wild4': {
-      const amount = card.value === 'draw2' ? 2 : 4;
-      const responds = rules.stackDraws || (card.value === 'wild4' && rules.challengeWild4);
+      const amount = drawAmount(card);
+      const responds = rules.stackDraws || (isWildDraw(card) && rules.challengeWild4);
       if (responds) {
         // The next player can stack, challenge, or take the cards.
         state.pendingDraw += amount;
-        state.wild4Check = card.value === 'wild4' ? { seat, illegal: extra.wild4Illegal } : null;
+        state.wild4Check = isWildDraw(card) ? { seat, illegal: extra.wild4Illegal } : null;
         state.currentPlayer = next;
         events.push({ type: 'drawStacked', total: state.pendingDraw, next });
       } else {
@@ -268,6 +289,21 @@ function applyEffect(
       }
       return false;
     }
+
+    case 'wildColor': {
+      // The next player draws until they get the chosen color, and loses their turn.
+      const color = state.currentColor;
+      drawUntil(state, next, (c) => c.color === color, events);
+      events.push({ type: 'skipped', seat: next });
+      state.currentPlayer = seatAfter(state, seat, 2);
+      return false;
+    }
+
+    case 'flip':
+      flipEverything(state, seat, events);
+      // If the flip turned up a wild, the flipper picks its color before play moves on.
+      state.currentPlayer = state.phase === 'chooseColor' ? seat : next;
+      return false;
 
     case 7:
       state.currentPlayer = next;
@@ -289,6 +325,36 @@ function applyEffect(
   }
 }
 
+/** UNO Flip: every card everywhere turns over, so the other side is in play. */
+function flipEverything(state: GameState, seat: number, events: GameEvent[]): void {
+  const turnOver = (card: Card): Card => ({ ...(card.other as CardFace), id: card.id, other: stripOther(card) }) as Card;
+  for (const p of state.players) p.hand = p.hand.map(turnOver);
+  state.drawPile = state.drawPile.map(turnOver);
+  state.discardPile = state.discardPile.map(turnOver);
+  state.side = state.side === 'dark' ? 'light' : 'dark';
+  events.push({ type: 'flipped', seat, side: state.side });
+
+  const top = topCard(state);
+  if (top.color === 'wild') state.phase = 'chooseColor';
+  else state.currentColor = top.color;
+}
+
+function stripOther(card: Card): CardFace {
+  const { id: _id, other: _other, ...face } = card;
+  return face as CardFace;
+}
+
+function chooseColor(state: GameState, seat: number, color: Color, events: GameEvent[]): string | null {
+  if (seat !== state.currentPlayer) return 'It is not your turn';
+  if (state.phase !== 'chooseColor') return 'There is no color to choose';
+  if (!colorsForSide(state.side).includes(color)) return 'Choose one of the colors in play';
+  state.currentColor = color;
+  state.phase = 'playing';
+  state.currentPlayer = seatAfter(state, seat);
+  events.push({ type: 'colorChosen', seat, color });
+  return null;
+}
+
 function swapHands(state: GameState, a: number, b: number): void {
   const pa = state.players[a]!;
   const pb = state.players[b]!;
@@ -308,6 +374,7 @@ function rotateHands(state: GameState): void {
 
 function draw(state: GameState, seat: number, events: GameEvent[]): string | null {
   if (seat !== state.currentPlayer) return 'It is not your turn';
+  if (state.phase === 'chooseColor') return 'Choose a color first';
   if (state.phase !== 'playing') return 'You already drew this turn';
   state.unoVulnerable = null;
 
@@ -346,7 +413,7 @@ function pass(state: GameState, seat: number, events: GameEvent[]): string | nul
 
 function challenge(state: GameState, seat: number, events: GameEvent[]): string | null {
   if (seat !== state.currentPlayer) return 'It is not your turn';
-  if (!canChallenge(state)) return 'There is no Wild +4 to challenge';
+  if (!canChallenge(state)) return 'There is no wild draw card to challenge';
   const { seat: target, illegal } = state.wild4Check!;
   const penalty = state.pendingDraw;
   state.pendingDraw = 0;
@@ -439,6 +506,7 @@ function endRound(state: GameState, winner: number, events: GameEvent[]): void {
     state.pendingDraw = 0;
     state.wild4Check = null;
   }
+  const { points: cardPoints } = deckFor(state.variantId);
   const points = state.players.reduce(
     (sum, p) => sum + p.hand.reduce((s, c) => s + cardPoints(c), 0),
     0,
@@ -461,8 +529,11 @@ function endRound(state: GameState, winner: number, events: GameEvent[]): void {
 
 /** Shuffles a fresh deck, deals, and flips the starting card. */
 function dealRound(state: GameState, events: GameEvent[]): void {
-  const deck = buildDecks(state.rules.deckCount);
-  state.rng = shuffle(deck, state.rng);
+  const config = deckFor(state.variantId);
+  const [deck, rng] = config.build(state.rules.deckCount, state.rng);
+  state.rng = shuffle(deck, rng);
+  // Two-sided decks are built light side up.
+  if (deck[0]?.other) state.side = 'light';
   state.drawPile = deck;
   state.discardPile = [];
   state.direction = 1;
@@ -483,9 +554,9 @@ function dealRound(state: GameState, events: GameEvent[]): void {
     }
   }
 
-  // Wild cards can't start the round: put them back and reshuffle.
+  // Wilds (and Flip cards) can't start the round: put them back and reshuffle.
   let start = state.drawPile.pop()!;
-  while (start.color === 'wild') {
+  while (!config.canStart(start) || start.color === 'wild') {
     state.drawPile.unshift(start);
     state.rng = shuffle(state.drawPile, state.rng);
     start = state.drawPile.pop()!;
@@ -505,8 +576,9 @@ function dealRound(state: GameState, events: GameEvent[]): void {
       events.push({ type: 'reversed', direction: -1 });
       state.currentPlayer = state.dealer;
       break;
+    case 'draw1':
     case 'draw2':
-      drawCards(state, first, 2, events);
+      drawCards(state, first, drawAmount(start), events);
       events.push({ type: 'skipped', seat: first });
       state.currentPlayer = seatAfter(state, state.dealer, 2);
       break;

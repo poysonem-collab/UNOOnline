@@ -1,4 +1,5 @@
 import { classic } from './variants/classic/index.js';
+import { flip } from './variants/flip/index.js';
 import type { Variant } from './variants/Variant.js';
 
 export * from './types.js';
@@ -9,12 +10,16 @@ export * from './protocol.js';
 export * from './ruleSettings.js';
 export type { Variant, BotDifficulty } from './variants/Variant.js';
 export { classic } from './variants/classic/index.js';
+export { flip } from './variants/flip/index.js';
+export { buildFlipDecks, flipPoints } from './variants/flip/deck.js';
+export { deckFor } from './variants/decks.js';
 export { BOT_CATCH_CHANCE, BOT_JUMP_IN_CHANCE } from './variants/classic/bot.js';
 export { buildClassicDeck, cardPoints } from './variants/classic/deck.js';
 export { canPlayOn, playableIdsFromView } from './variants/classic/rules.js';
 
 export const VARIANTS: Record<string, Variant> = {
   [classic.id]: classic,
+  [flip.id]: flip,
 };
 
 export function getVariant(id: string): Variant {

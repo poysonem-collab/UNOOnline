@@ -1,4 +1,16 @@
-import type { Card, Color, GameState, PlayerView, RuleSet } from '../../types.js';
+import type { Card, CardFace, CardValue, Color, GameState, PlayerView, RuleSet } from '../../types.js';
+
+const DRAW_AMOUNTS: Partial<Record<CardValue, number>> = { draw1: 1, draw2: 2, wild2: 2, wild4: 4, draw5: 5 };
+
+/** How many cards a draw card makes the next player take (0 for other cards). */
+export function drawAmount(card: CardFace): number {
+  return DRAW_AMOUNTS[card.value] ?? 0;
+}
+
+/** Wild +4 and UNO Flip's Wild Draw Two: only allowed with no card of the current color, and challengeable. */
+export function isWildDraw(card: CardFace): boolean {
+  return card.value === 'wild4' || card.value === 'wild2';
+}
 
 export function topCard(state: GameState): Card {
   const top = state.discardPile[state.discardPile.length - 1];
@@ -21,14 +33,17 @@ export interface PlayContext {
   rules: RuleSet;
 }
 
-/** While draw cards are stacking up, only another draw card can be played on them. */
+/**
+ * While draw cards are stacking up, only another draw card can be played on them: one that
+ * draws at least as many (+2 on +2, +4 on +2...), or with the extra option, a smaller one
+ * in the chosen color (+2 on a +4).
+ */
 export function canStackOn(card: Card, ctx: PlayContext): boolean {
   if (!ctx.rules.stackDraws) return false;
-  if (ctx.top.value === 'draw2') return card.value === 'draw2' || card.value === 'wild4';
-  if (ctx.top.value === 'wild4') {
-    return card.value === 'wild4' || (ctx.rules.stackPlus2OnPlus4 && card.value === 'draw2' && card.color === ctx.currentColor);
-  }
-  return false;
+  const top = drawAmount(ctx.top);
+  const mine = drawAmount(card);
+  if (!top || !mine) return false;
+  return mine >= top || (ctx.rules.stackPlus2OnPlus4 && card.color === ctx.currentColor);
 }
 
 /** Can `card` be played on your turn? `handSize` is your hand before playing. */

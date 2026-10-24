@@ -1,4 +1,4 @@
-import { COLORS, type Card, type NumberValue } from '../../types.js';
+import { COLORS, type Card, type CardFace, type NumberValue } from '../../types.js';
 
 /** One classic 108-card deck. `prefix` keeps ids unique when using several decks. */
 export function buildClassicDeck(prefix = 'd0'): Card[] {
@@ -28,7 +28,7 @@ export function buildDecks(count: number): Card[] {
   return cards;
 }
 
-export function cardPoints(card: Card): number {
+export function cardPoints(card: CardFace): number {
   if (typeof card.value === 'number') return card.value;
   if (card.color === 'wild') return 50;
   return 20;

@@ -1,4 +1,4 @@
-import { COLORS, MAX_PLAYERS, type Action, type Color, type GameEvent, type PlayerView, type RuleSet } from './types.js';
+import { ALL_COLORS, MAX_PLAYERS, type Action, type Color, type GameEvent, type PlayerView, type RuleSet } from './types.js';
 import type { BotDifficulty } from './variants/Variant.js';
 
 export const ROOM_CODE_LENGTH = 4;
@@ -90,6 +90,8 @@ export function parseAction(input: unknown): Action | null {
     case 'callUno':
     case 'challenge':
       return { type: raw.type };
+    case 'chooseColor':
+      return ALL_COLORS.includes(raw.color as Color) ? { type: 'chooseColor', color: raw.color as Color } : null;
     case 'catchUno':
       return Number.isInteger(raw.target) && (raw.target as number) >= 0 && (raw.target as number) < MAX_PLAYERS
         ? { type: 'catchUno', target: raw.target as number }
@@ -98,7 +100,7 @@ export function parseAction(input: unknown): Action | null {
       const ids = raw.cardIds;
       if (!Array.isArray(ids) || ids.length === 0 || ids.length > MAX_CARDS_PER_PLAY) return null;
       if (!ids.every((id) => typeof id === 'string' && id.length <= 20)) return null;
-      if (raw.color !== undefined && !COLORS.includes(raw.color as Color)) return null;
+      if (raw.color !== undefined && !ALL_COLORS.includes(raw.color as Color)) return null;
       const swapWith = raw.swapWith;
       if (swapWith !== undefined && !(Number.isInteger(swapWith) && (swapWith as number) >= 0 && (swapWith as number) < MAX_PLAYERS)) {
         return null;

@@ -34,9 +34,9 @@ describe('classic deck', () => {
   });
 
   it('scores cards correctly', () => {
-    expect(cardPoints({ id: 'a', color: 'red', value: 7 })).toBe(7);
-    expect(cardPoints({ id: 'a', color: 'red', value: 'skip' })).toBe(20);
-    expect(cardPoints({ id: 'a', color: 'wild', value: 'wild4' })).toBe(50);
+    expect(cardPoints({ color: 'red', value: 7 })).toBe(7);
+    expect(cardPoints({ color: 'red', value: 'skip' })).toBe(20);
+    expect(cardPoints({ color: 'wild', value: 'wild4' })).toBe(50);
   });
 });
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { classic, DEFAULT_RULES, nextRandom, playableIdsFromView, type Action, type GameUpdate, type RuleSet } from '@uno/shared';
+import { classic, colorsForSide, DEFAULT_RULES, flip, nextRandom, playableIdsFromView, type Action, type GameUpdate, type RuleSet, type Variant } from '@uno/shared';
 import { GameRunner, type RunnerOptions, type RunnerSeat } from '../src/game/GameRunner.js';
 
 function seeded(seed: number): () => number {
@@ -17,10 +17,10 @@ const human = (id: string): RunnerSeat => ({ id, name: id, isBot: false, difficu
 const bot = (id: string): RunnerSeat => ({ id, name: id, isBot: true, difficulty: 'normal' });
 
 /** Starts a runner and records the last update each player received. */
-function start(seats: RunnerSeat[], rules: Partial<RuleSet> = {}, seed = 7) {
+function start(seats: RunnerSeat[], rules: Partial<RuleSet> = {}, seed = 7, variant: Variant = classic) {
   const latest = new Map<string, GameUpdate>();
   const received: { to: string; update: GameUpdate }[] = [];
-  const runner = new GameRunner(classic, seats, { ...DEFAULT_RULES, ...rules }, seed, (to, update) => {
+  const runner = new GameRunner(variant, seats, { ...DEFAULT_RULES, ...rules }, seed, (to, update) => {
     latest.set(to, update);
     received.push({ to, update });
   }, { ...OPTIONS, random: seeded(seed) });
@@ -32,11 +32,12 @@ function start(seats: RunnerSeat[], rules: Partial<RuleSet> = {}, seed = 7) {
 /** A legal move for a human, worked out only from what they can see. */
 function humanMove(update: GameUpdate): Action {
   const { view } = update;
+  if (view.phase === 'chooseColor') return { type: 'chooseColor', color: colorsForSide(view.side)[0]! };
   const playable = [...playableIdsFromView(view)];
   if (playable.length) {
     const card = view.hand.find((c) => c.id === playable[0])!;
     const action: Action = { type: 'play', cardIds: [card.id] };
-    if (card.color === 'wild') action.color = 'red';
+    if (card.color === 'wild') action.color = colorsForSide(view.side)[0]!;
     if (view.rules.sevenZero && card.value === 7) action.swapWith = (view.you + 1) % view.players.length;
     return action;
   }
@@ -88,6 +89,43 @@ describe('GameRunner', () => {
       runner.dispose();
     }
     expect(jumpIns).toBeGreaterThan(0);
+  });
+
+  it('plays full UNO Flip games, flipping between sides', () => {
+    let flips = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const { runner, latest, received } = start([human('me'), bot('b1'), bot('b2')], {}, seed, flip);
+      for (let i = 0; i < 5_000 && runner.phase !== 'gameOver'; i++) {
+        const update = latest.get('me')!;
+        const myTurn = update.view.currentPlayer === 0 && ['playing', 'playDrawn', 'chooseColor'].includes(runner.phase);
+        if (myTurn) expect(runner.apply('me', humanMove(update))).toBeNull();
+        else vi.advanceTimersByTime(300);
+      }
+      expect(runner.phase).toBe('gameOver');
+      flips += received.filter((r) => r.update.events.some((e) => e.type === 'flipped')).length;
+      // You never see the backs of your own cards, but you do see everyone else's.
+      const view = latest.get('me')!.view;
+      expect(view.hand.every((c) => c.other === undefined)).toBe(true);
+      expect(view.players[1]!.otherSides).toHaveLength(view.players[1]!.handCount);
+      runner.dispose();
+    }
+    expect(flips).toBeGreaterThan(0);
+  });
+
+  it('picks a color for a player whose timer runs out after a flip', () => {
+    const { runner, latest } = start([human('a'), human('b')], { turnTimerSeconds: 15 }, 3, flip);
+    // Force the moment: give the current player a Flip whose back is a wild.
+    const internal = (runner as unknown as { state: import('@uno/shared').GameState }).state;
+    const seat = internal.currentPlayer;
+    const top = internal.discardPile.at(-1)!;
+    internal.players[seat]!.hand.push({ id: 'test-flip', color: top.color as 'red', value: 'flip', other: { color: 'wild', value: 'wild', dark: true } });
+    const id = seat === 0 ? 'a' : 'b';
+    expect(runner.apply(id, { type: 'play', cardIds: ['test-flip'] })).toBeNull();
+    expect(latest.get(id)!.view.phase).toBe('chooseColor');
+    vi.advanceTimersByTime(15_000);
+    expect(latest.get(id)!.view.phase).toBe('playing');
+    expect(['pink', 'teal', 'orange', 'purple']).toContain(latest.get(id)!.view.currentColor);
+    runner.dispose();
   });
 
   it('sends each human only their own cards', () => {

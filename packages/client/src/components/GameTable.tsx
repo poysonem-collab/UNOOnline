@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { colorName, describeCard, type Action, type Card as CardData, type Color, type PlayerView } from '@uno/shared';
+import { colorName, colorsForSide, describeCard, type Action, type Card as CardData, type Color, type PlayerView } from '@uno/shared';
 import { Card, CardBack, CARD_COLORS } from './Card';
 import { ColorPicker } from './ColorPicker';
 import { Confetti } from './Confetti';
@@ -60,8 +60,11 @@ function useCountdown(deadline: number | null | undefined): number | null {
   return deadline ? Math.max(0, Math.ceil((deadline - now) / 1000)) : null;
 }
 
-const COLOR_ORDER = ['red', 'yellow', 'green', 'blue', 'wild'];
-const VALUE_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 'skip', 'reverse', 'draw2', 'wild', 'wild4'];
+const COLOR_ORDER = ['red', 'yellow', 'green', 'blue', 'pink', 'teal', 'orange', 'purple', 'wild'];
+const VALUE_ORDER = [
+  0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+  'skip', 'skipAll', 'reverse', 'flip', 'draw1', 'draw2', 'draw5', 'wild', 'wild2', 'wild4', 'wildColor',
+];
 
 function sortHand(hand: CardData[]): CardData[] {
   return [...hand].sort(
@@ -101,10 +104,16 @@ export function GameTable({
   const seatEls = useRef(new Map<number, HTMLElement>());
   const handledSeq = useRef(events && Date.now() - events.at > FRESH_MS ? events.seq : -1);
 
-  // Keep the last few discards visible under the top card.
+  // Keep the last few discards visible under the top card (a flip turns them all over, so start afresh).
+  const shownSide = useRef(view.side);
   useEffect(() => {
+    if (view.side !== shownSide.current) {
+      shownSide.current = view.side;
+      setPile([view.topCard]);
+      return;
+    }
     setPile((prev) => (prev.at(-1)?.id === view.topCard.id ? prev : [...prev, view.topCard].slice(-4)));
-  }, [view.topCard]);
+  }, [view.topCard, view.side]);
 
   useEffect(() => {
     if (!error) return;
@@ -113,7 +122,9 @@ export function GameTable({
   }, [error]);
 
   const you = view.players[view.you]!;
-  const yourTurn = view.currentPlayer === view.you && (view.phase === 'playing' || view.phase === 'playDrawn');
+  const gameActive = view.phase === 'playing' || view.phase === 'playDrawn' || view.phase === 'chooseColor';
+  const yourTurn = view.currentPlayer === view.you && gameActive;
+  const sideColors = colorsForSide(view.side);
 
   // Each new move: sounds, a callout for big moments, and cards flying across the table.
   useEffect(() => {
@@ -177,7 +188,6 @@ export function GameTable({
   useEffect(() => {
     if (yourTurn && secondsLeft !== null && secondsLeft > 0 && secondsLeft <= 5) playSound('tick');
   }, [yourTurn, secondsLeft]);
-  const gameActive = view.phase === 'playing' || view.phase === 'playDrawn';
   const pointsMode = view.rules.winCondition === 'points500';
   const hand = useMemo(() => sortHand(view.hand), [view.hand]);
 
@@ -239,6 +249,7 @@ export function GameTable({
   const current = view.players[view.currentPlayer]!;
   const status =
     !gameActive ? ''
+    : view.phase === 'chooseColor' ? (yourTurn ? 'The flip turned up a wild: choose a color' : `${current.name} is choosing a color…`)
     : yourTurn && pending > 0 && view.canChallenge && playableIds.size === 0 ? `+${pending} on you! Take the cards or challenge the +4`
     : yourTurn && pending > 0 && playableIds.size === 0 ? `Take ${pending} cards`
     : yourTurn && pending > 0 ? `Stack a draw card to pass it on, or take ${pending} cards`
@@ -249,7 +260,7 @@ export function GameTable({
     : `${current.name}'s turn`;
 
   return (
-    <div className="table">
+    <div className={`table ${view.side === 'dark' ? 'table--dark' : ''}`}>
       <header className="table__header">
         <button type="button" className="btn btn--ghost btn--small" onClick={onExit}>{exitLabel}</button>
         <span className="table__round">{pointsMode ? `Round ${view.round} · First to 500` : 'First out wins'}</span>
@@ -295,7 +306,8 @@ export function GameTable({
           aria-label={pending > 0 && yourTurn ? `Take ${pending} cards` : `Draw a card (${view.drawPileCount} left)`}
         >
           <CardBack className="card--table draw-pile__under" />
-          <CardBack className="card--table" />
+          {/* UNO Flip: the top card's back is a real face everyone can see. */}
+          {view.drawPileOther ? <Card card={view.drawPileOther} className="card--table draw-pile__top" /> : <CardBack className="card--table draw-pile__top" />}
           <span className="draw-pile__count">{view.drawPileCount}</span>
         </button>
 
@@ -361,7 +373,8 @@ export function GameTable({
         {base && (
           <p className="you__hint">Tap your other {String(base.value)}s to play them too. The last one you pick sets the color.</p>
         )}
-        <div ref={handRef} className="hand" style={{ ['--n' as string]: hand.length }}>
+        {/* Keyed by side so the whole hand turns over when the cards flip. */}
+        <div ref={handRef} key={view.side ?? 'cards'} className={`hand ${view.side ? 'hand--flip' : ''}`} style={{ ['--n' as string]: hand.length }}>
           {hand.map((card) => {
             const selected = selection.includes(card.id);
             const tappable = base ? selected || isExtra(card) : playableIds.has(card.id);
@@ -396,7 +409,10 @@ export function GameTable({
       {showScores && <ScoreboardModal view={view} onClose={() => setShowScores(false)} />}
 
       {picker?.kind === 'color' && (
-        <ColorPicker onCancel={() => setPicker(null)} onPick={(color) => submitPlay(picker.cardIds, color)} />
+        <ColorPicker colors={sideColors} onCancel={() => setPicker(null)} onPick={(color) => submitPlay(picker.cardIds, color)} />
+      )}
+      {yourTurn && view.phase === 'chooseColor' && (
+        <ColorPicker colors={sideColors} title="A wild turned up: choose its color" onPick={(color) => run({ type: 'chooseColor', color })} />
       )}
       {picker?.kind === 'swap' && (
         <SwapPicker

@@ -174,6 +174,7 @@ function LobbyView({ room, onLeave }: { room: Room; onLeave: () => void }) {
       {error && <p className="form-error" role="alert">{error}</p>}
 
       <RulesPanel
+        variantId={lobby.variantId}
         rules={lobby.rules}
         onChange={(rules) => run(room.updateRules(rules))}
         playerCount={lobby.seats.length}

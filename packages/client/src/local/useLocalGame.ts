@@ -73,7 +73,7 @@ export function useLocalGame(config: LocalGameConfig) {
 
   // Bots take their turns after a short pause so humans can follow.
   useEffect(() => {
-    if (state.phase !== 'playing' && state.phase !== 'playDrawn') return;
+    if (state.phase !== 'playing' && state.phase !== 'playDrawn' && state.phase !== 'chooseColor') return;
     const seat = state.currentPlayer;
     if (!state.players[seat]!.isBot) return;
     // Leave a longer window when someone forgot UNO, so they can be caught.

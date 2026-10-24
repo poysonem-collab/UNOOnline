@@ -1,6 +1,8 @@
 import { HAND_SIZES, needsTwoDecks, type RuleSet } from '@uno/shared';
 
 interface RulesPanelProps {
+  /** Some rules read differently per game (UNO Flip has no 0s and its own draw cards). */
+  variantId?: string;
   rules: RuleSet;
   onChange: (rules: RuleSet) => void;
   playerCount: number;
@@ -21,7 +23,15 @@ const HOUSE_RULES: { key: HouseRule; label: string; hint: string }[] = [
   { key: 'noActionFinish', label: 'No finishing on action cards', hint: 'Your last card has to be a number card.' },
 ];
 
-export function RulesPanel({ rules, onChange, playerCount, online, readOnly }: RulesPanelProps) {
+/** UNO Flip wording for the rules that differ. */
+const FLIP_RULES: Partial<Record<HouseRule, { label: string; hint: string }>> = {
+  stackDraws: { label: 'Stack draw cards', hint: 'Hit with a Draw One, Draw Two or Draw Five? Play one that draws at least as many to pass the total on.' },
+  sevenZero: { label: 'Sevens swap', hint: 'Playing a 7 swaps hands with a player you choose. (UNO Flip has no 0s.)' },
+  challengeWild4: { label: 'Challenge Wild Draw Two', hint: 'A Wild Draw Two is only allowed with no card of the current color. Challenge it: a bluffer draws the cards, otherwise you draw 2 extra.' },
+};
+
+export function RulesPanel({ variantId, rules, onChange, playerCount, online, readOnly }: RulesPanelProps) {
+  const houseRules = HOUSE_RULES.map((r) => (variantId === 'flip' ? { ...r, ...FLIP_RULES[r.key] } : r));
   const set = <K extends keyof RuleSet>(key: K, value: RuleSet[K]) => onChange({ ...rules, [key]: value });
   const twoDecksRequired = needsTwoDecks(playerCount, rules.handSize);
 
@@ -69,7 +79,7 @@ export function RulesPanel({ rules, onChange, playerCount, online, readOnly }: R
       )}
 
       <h3 className="rules__heading">House rules</h3>
-      {HOUSE_RULES.map(({ key, label, hint }) => (
+      {houseRules.map(({ key, label, hint }) => (
         <div key={key}>
           <label className="toggle">
             <input type="checkbox" checked={rules[key]} onChange={(e) => set(key, e.target.checked)} />
@@ -82,8 +92,12 @@ export function RulesPanel({ rules, onChange, playerCount, online, readOnly }: R
             <label className="toggle toggle--sub">
               <input type="checkbox" checked={rules.stackPlus2OnPlus4} onChange={(e) => set('stackPlus2OnPlus4', e.target.checked)} />
               <span>
-                <strong>Allow +2 on a +4</strong>
-                <small>Only in the color the +4 picked. A +4 can always go on a +2.</small>
+                <strong>{variantId === 'flip' ? 'Allow smaller on bigger' : 'Allow +2 on a +4'}</strong>
+                <small>
+                  {variantId === 'flip'
+                    ? 'A smaller draw card can go on a bigger one, in the color in play.'
+                    : 'Only in the color the +4 picked. A +4 can always go on a +2.'}
+                </small>
               </span>
             </label>
           )}

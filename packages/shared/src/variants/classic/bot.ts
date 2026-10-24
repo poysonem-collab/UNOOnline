@@ -1,7 +1,7 @@
-import { COLORS, type Action, type Card, type Color, type GameState } from '../../types.js';
+import { ALL_COLORS, colorsForSide, type Action, type Card, type Color, type GameState } from '../../types.js';
 import type { BotDifficulty } from '../Variant.js';
 import { canChallenge } from './engine.js';
-import { jumpInCards, playableCards, seatAfter } from './rules.js';
+import { drawAmount, jumpInCards, playableCards, seatAfter } from './rules.js';
 
 /** Chance a bot catches a player who forgot to call UNO. */
 export const BOT_CATCH_CHANCE: Record<BotDifficulty, number> = { easy: 0.25, normal: 0.7 };
@@ -21,6 +21,10 @@ export function chooseBotMove(
   random: () => number,
 ): Action[] {
   const hand = state.players[seat]!.hand;
+  const colors = colorsForSide(state.side);
+  if (state.phase === 'chooseColor') {
+    return [{ type: 'chooseColor', color: difficulty === 'easy' ? pickRandom([...colors], random) : bestColor(hand, colors, random) }];
+  }
   const playable = playableCards(state, seat);
 
   if (playable.length === 0) {
@@ -61,7 +65,9 @@ function playAction(state: GameState, seat: number, cards: Card[], difficulty: B
   const last = cards[cards.length - 1]!;
   const action: Action = { type: 'play', cardIds: cards.map((c) => c.id) };
   if (last.color === 'wild') {
-    action.color = difficulty === 'easy' ? pickRandom([...COLORS], random) : bestColor(hand.filter((c) => !cards.includes(c)), random);
+    const colors = colorsForSide(state.side);
+    const rest = hand.filter((c) => !cards.includes(c));
+    action.color = difficulty === 'easy' ? pickRandom([...colors], random) : bestColor(rest, colors, random);
   }
   if (state.rules.sevenZero && last.value === 7 && hand.length > cards.length) {
     action.swapWith = difficulty === 'easy' ? pickRandom(opponents(state, seat), random) : smallestHand(state, seat);
@@ -107,14 +113,16 @@ function pickBestCard(state: GameState, seat: number, playable: Card[]): Card {
   const fewestOther = state.players[smallestHand(state, seat)]!.hand.length;
 
   const score = (card: Card): number => {
-    const isAttack = card.value === 'skip' || card.value === 'draw2' || card.value === 'wild4' || card.value === 'reverse';
+    const isAttack = drawAmount(card) > 0 || ['skip', 'skipAll', 'reverse', 'wildColor'].includes(String(card.value));
     let s = 0;
     // Hold wilds for when nothing else works...
     if (card.color === 'wild') s -= 100;
     // ...unless the next player is about to win.
     if (nextHandSize <= 2 && isAttack) s += 200;
-    // When stacking, pass the cheaper card and keep the +4.
-    if (state.pendingDraw > 0) s += card.value === 'draw2' ? 50 : 0;
+    // When stacking, pass the cheapest draw card and keep the big ones.
+    if (state.pendingDraw > 0) s += 50 - drawAmount(card) * 8;
+    // Skip Everyone means another turn straight away.
+    if (card.value === 'skipAll') s += 25;
     // A 7 is worth playing when someone else has a much smaller hand.
     if (state.rules.sevenZero && card.value === 7) s += fewestOther < hand.length - 2 ? 150 : -30;
     // Dump high-point cards first, and stay in the color we hold most of.
@@ -138,16 +146,16 @@ function shouldChallenge(state: GameState, difficulty: BotDifficulty, random: ()
   return suspectCards >= 4 && random() < 0.4;
 }
 
-/** The color the bot holds most of. */
-function bestColor(hand: Card[], random: () => number): Color {
+/** The color (of those in play) the bot holds most of. */
+function bestColor(hand: Card[], colors: readonly Color[], random: () => number): Color {
   const counts = countColors(hand);
-  const max = Math.max(...COLORS.map((c) => counts[c]));
-  if (max === 0) return pickRandom([...COLORS], random);
-  return COLORS.find((c) => counts[c] === max)!;
+  const max = Math.max(...colors.map((c) => counts[c]));
+  if (max === 0) return pickRandom([...colors], random);
+  return colors.find((c) => counts[c] === max)!;
 }
 
 function countColors(hand: Card[]): Record<Color, number> {
-  const counts = { red: 0, yellow: 0, green: 0, blue: 0 };
+  const counts = Object.fromEntries(ALL_COLORS.map((c) => [c, 0])) as Record<Color, number>;
   for (const card of hand) if (card.color !== 'wild') counts[card.color]++;
   return counts;
 }

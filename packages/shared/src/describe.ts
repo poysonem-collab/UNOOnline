@@ -1,4 +1,4 @@
-import type { Card, Color, GameEvent, PlayerInfo } from './types.js';
+import type { CardFace, Color, GameEvent, PlayerInfo } from './types.js';
 
 const VALUE_NAMES: Record<string, string> = {
   skip: 'Skip',
@@ -6,6 +6,12 @@ const VALUE_NAMES: Record<string, string> = {
   draw2: 'Draw Two',
   wild: 'Wild',
   wild4: 'Wild Draw Four',
+  draw1: 'Draw One',
+  draw5: 'Draw Five',
+  flip: 'Flip',
+  skipAll: 'Skip Everyone',
+  wild2: 'Wild Draw Two',
+  wildColor: 'Wild Draw Color',
 };
 
 export function colorName(color: Color): string {
@@ -13,7 +19,7 @@ export function colorName(color: Color): string {
 }
 
 /** "Red 5", "Blue Skip", "Wild Draw Four". */
-export function describeCard(card: Card): string {
+export function describeCard(card: CardFace): string {
   const value = VALUE_NAMES[String(card.value)] ?? String(card.value);
   return card.color === 'wild' ? value : `${colorName(card.color)} ${value}`;
 }
@@ -53,6 +59,12 @@ export function describeEvent(event: GameEvent, players: PlayerInfo[], you: numb
       return event.success
         ? `${name(event.by)} challenged the +4: ${name(event.target)} was bluffing and takes the cards!`
         : `${name(event.by)} challenged the +4, but it was legal: +2 extra`;
+    case 'flipped':
+      return `${name(event.seat)} flipped everything to the ${event.side} side!`;
+    case 'colorChosen':
+      return `${name(event.seat)} chose ${colorName(event.color)}`;
+    case 'skippedEveryone':
+      return `${name(event.seat)} skipped everyone and goes again`;
     case 'roundOver':
       return `${name(event.winner)} won the round (+${event.points} points)`;
     case 'gameOver':

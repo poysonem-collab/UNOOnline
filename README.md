@@ -11,6 +11,20 @@ Play UNO in the browser against bots, or online with friends (up to 10 players, 
 The Render server falls asleep when nobody has used it for 15 minutes, so the first visit after that
 takes up to a minute.
 
+## Game modes
+
+- **UNO**: the classic game.
+- **UNO Flip**: double-sided cards. You hold your cards so everyone else sees the backs, and
+  the top of the draw pile shows its back too. A **Flip** card turns every card over:
+  - **Light side** (red, yellow, green, blue): Draw One, Reverse, Skip, Flip, Wild, Wild Draw Two.
+  - **Dark side** (pink, teal, orange, purple): Draw Five, Reverse, Skip Everyone (you go again),
+    Flip, Wild, Wild Draw Color (the next player draws until they get the chosen color).
+  - If a flip turns up a wild, the player who flipped picks its color.
+  - Rounds are scored by the side in play, with the official values (Draw One 10, Skip Everyone 30,
+    Wild 40, Wild Draw Two 50, Wild Draw Color 60...).
+
+Other modes are listed in the menu and unlocked as they're built.
+
 ## House rules
 
 The host can switch these on in the lobby (or on the setup screen for bot games):
@@ -101,5 +115,6 @@ That server must list the Pages address in its `CORS_ORIGINS` setting (see `rend
 - [x] Step 5: House rules (stacking, same numbers, 7-0, jump-in, draw until playable, +4 challenge, no action finish)
 - [x] Step 6: Polish (sound effects with a mute button, flying-card animations, big callouts, confetti, end-of-round breakdown and scoreboard)
 - [ ] Step 7: Hosting polish
+- [x] UNO Flip
 
 UNO is a trademark of Mattel. This is an unofficial fan project; the card art is drawn from scratch.

@@ -36,7 +36,11 @@ export function soundsFor(events: GameEvent[], you: number): SoundName[] {
         break;
       case 'swapped':
       case 'rotated':
+      case 'flipped':
         sounds.push('swap');
+        break;
+      case 'skippedEveryone':
+        sounds.push('skip');
         break;
       case 'challenged':
         sounds.push(e.success ? 'catch' : 'penalty');
@@ -54,7 +58,7 @@ export function soundsFor(events: GameEvent[], you: number): SoundName[] {
 
 export interface Burst {
   text: string;
-  kind: 'action' | 'penalty' | 'uno' | 'good';
+  kind: 'action' | 'penalty' | 'uno' | 'good' | 'flip';
 }
 
 /** The big word that flashes in the middle of the table, if this batch deserves one. */
@@ -62,6 +66,8 @@ export function burstFor(events: GameEvent[], you: number, names: string[]): Bur
   const name = (seat: number) => (seat === you ? 'You' : names[seat] ?? '?');
   // Later events in a batch are usually the consequence, so check the most dramatic first.
   for (const e of events) {
+    if (e.type === 'flipped') return { text: e.side === 'dark' ? 'FLIP! Dark side' : 'FLIP! Light side', kind: 'flip' };
+    if (e.type === 'skippedEveryone') return { text: 'Skip everyone!', kind: 'action' };
     if (e.type === 'challenged') return { text: e.success ? 'Bluff caught!' : 'Challenge failed!', kind: 'penalty' };
     if (e.type === 'caughtUno') return { text: `${name(e.target)} caught!`, kind: 'penalty' };
     if (e.type === 'jumpedIn') return { text: 'Jump-in!', kind: 'good' };
@@ -72,8 +78,11 @@ export function burstFor(events: GameEvent[], you: number, names: string[]): Bur
     if (e.type === 'drawStacked') return { text: `+${e.total}`, kind: 'penalty' };
     if (e.type === 'played') {
       const card = e.cards[e.cards.length - 1]!;
-      if (card.value === 'draw2') return { text: '+2', kind: 'penalty' };
+      if (card.value === 'draw1') return { text: '+1', kind: 'penalty' };
+      if (card.value === 'draw2' || card.value === 'wild2') return { text: '+2', kind: 'penalty' };
       if (card.value === 'wild4') return { text: '+4', kind: 'penalty' };
+      if (card.value === 'draw5') return { text: '+5', kind: 'penalty' };
+      if (card.value === 'wildColor') return { text: `Draw till ${e.color}!`, kind: 'penalty' };
       if (card.value === 'skip') return { text: 'Skip!', kind: 'action' };
       if (card.value === 'reverse') return { text: 'Reverse!', kind: 'action' };
       if (e.cards.length > 1) return { text: `${e.cards.length}× ${String(card.value)}!`, kind: 'good' };

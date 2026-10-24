@@ -78,7 +78,8 @@ describe('lobby server', () => {
 
   it('rejects locked versions and blank names', async () => {
     const c = await client();
-    expect(await c.emitWithAck('room:create', { name: 'A', variantId: 'flip' })).toMatchObject({ ok: false });
+    expect(await c.emitWithAck('room:create', { name: 'A', variantId: 'no-mercy' })).toMatchObject({ ok: false });
+    expect(await c.emitWithAck('room:create', { name: 'A', variantId: 'flip' })).toMatchObject({ ok: true, lobby: { variantId: 'flip' } });
     expect(await c.emitWithAck('room:create', { name: '   ', variantId: 'classic' })).toMatchObject({ ok: false });
   });
 
