@@ -84,6 +84,7 @@ export function burstFor(events: GameEvent[], you: number, names: string[]): Bur
     if (e.type === 'playAgain') return { text: 'Play again!', kind: 'good' };
     if (e.type === 'shuffledHands') return { text: 'Shuffle hands!', kind: 'action' };
     if (e.type === 'everyoneDrew') return { text: `Everyone draws ${e.count}!`, kind: 'penalty' };
+    if (e.type === 'targeted') return { text: `${name(e.target)} ${e.target === you ? 'draw' : 'draws'} ${e.count}!`, kind: 'penalty' };
     if (e.type === 'discardedAll') return { text: `Discard all ${e.count + 1}!`, kind: 'good' };
     if (e.type === 'challenged') return { text: e.success ? 'Bluff caught!' : 'Challenge failed!', kind: 'penalty' };
     if (e.type === 'caughtUno') return { text: `${name(e.target)} caught!`, kind: 'penalty' };
@@ -105,8 +106,9 @@ export function burstFor(events: GameEvent[], you: number, names: string[]): Bur
       if (card.value === 'wildRev8') return { text: 'Reverse +8!', kind: 'penalty' };
       if (card.value === 'roulette') return { text: 'Color Roulette!', kind: 'action' };
       if (card.value === 'wildColor') return { text: `Draw till ${e.color}!`, kind: 'penalty' };
-      if (card.value === 'skip') return { text: 'Skip!', kind: 'action' };
-      if (card.value === 'reverse') return { text: 'Reverse!', kind: 'action' };
+      if (card.value === 'skip' || card.value === 'wildSkip') return { text: 'Skip!', kind: 'action' };
+      if (card.value === 'wildSkip2') return { text: 'Skip two!', kind: 'action' };
+      if (card.value === 'reverse' || card.value === 'wildReverse') return { text: 'Reverse!', kind: 'action' };
       if (e.cards.length > 1) return { text: `${e.cards.length}× ${String(card.value)}!`, kind: 'good' };
     }
     if (e.type === 'calledUno') return { text: 'UNO!', kind: 'uno' };

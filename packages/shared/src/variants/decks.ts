@@ -1,6 +1,7 @@
 import type { Card, CardFace, RuleSet } from '../types.js';
 import { buildDecks, cardPoints } from './classic/deck.js';
 import { buildFlipDecks, FLIP_DECK_SIZE, flipPoints } from './flip/deck.js';
+import { ALL_WILD_DECK_SIZE, allWildPoints, buildAllWildDecks } from './allwild/deck.js';
 import { buildGiantDecks, GIANT_DECK_SIZE } from './giant/deck.js';
 import { buildNoMercyDecks, NO_MERCY_DECK_SIZE, noMercyPoints } from './nomercy/deck.js';
 
@@ -16,6 +17,8 @@ export interface DeckConfig {
   pointsToWin: number;
   /** No Mercy: a hand this big is knocked out of the round. */
   mercyLimit: number | null;
+  /** UNO All Wild: no colors at all, so nobody picks one. */
+  colorless?: boolean;
 }
 
 export const DECKS: Record<string, DeckConfig> = {
@@ -34,6 +37,16 @@ export const DECKS: Record<string, DeckConfig> = {
     canStart: (card) => card.color !== 'wild' && card.value !== 'flip',
     pointsToWin: 500,
     mercyLimit: null,
+  },
+  'all-wild': {
+    size: ALL_WILD_DECK_SIZE,
+    build: (deckCount, rng) => [buildAllWildDecks(deckCount), rng],
+    points: allWildPoints,
+    // Start on a plain Wild, so nobody is hit before the game begins.
+    canStart: (card) => card.value === 'wild',
+    pointsToWin: 500,
+    mercyLimit: null,
+    colorless: true,
   },
   giant: {
     size: GIANT_DECK_SIZE,

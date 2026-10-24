@@ -58,8 +58,13 @@ export interface Candidate {
   color?: Color;
 }
 
-/** Whether the imagined games are close enough to the real rules to trust. */
+/**
+ * Whether the imagined games are close enough to the real rules to trust. (UNO All Wild is left
+ * out too: any card fits, so the choices barely differ, and in tests imagining games only added
+ * noise to the Expert's rules of thumb.)
+ */
 export function lookaheadSupported(state: GameState): boolean {
+  if (deckFor(state.variantId).colorless) return false;
   return state.side === undefined && !state.rules.jumpIn && (state.phase === 'playing' || state.phase === 'playDrawn');
 }
 

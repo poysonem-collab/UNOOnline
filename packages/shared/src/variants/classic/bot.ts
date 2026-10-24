@@ -151,6 +151,8 @@ interface Knowledge {
   points: (card: CardFace) => number;
   /** No Mercy: a hand this big is knocked out. */
   mercyLimit: number | null;
+  /** UNO All Wild: no colors, so color tactics don't apply. */
+  colorless: boolean;
 }
 
 const faceKey = (card: CardFace) => `${card.color}:${String(card.value)}`;
@@ -188,6 +190,7 @@ function know(state: GameState, seat: number): Knowledge {
     pointsMode: state.rules.winCondition === 'points500',
     points: deckFor(state.variantId).points,
     mercyLimit: deckFor(state.variantId).mercyLimit,
+    colorless: deckFor(state.variantId).colorless === true,
   };
 }
 
@@ -213,7 +216,9 @@ function pickNormal(state: GameState, k: Knowledge, playable: Card[]): Card {
   const counts = countColors(k.hand);
   const fewestOther = minOther(k);
   const score = (card: Card): number => {
-    const attack = drawAmount(card) > 0 || ['skip', 'skipAll', 'reverse', 'wildColor', 'roulette'].includes(String(card.value));
+    const attack =
+      drawAmount(card) > 0 ||
+      ['skip', 'skipAll', 'reverse', 'wildColor', 'roulette', 'wildSkip', 'wildSkip2', 'wildReverse', 'wildTarget2'].includes(String(card.value));
     let s = 0;
     if (card.color === 'wild') s -= 100; // hold wilds for when nothing else works...
     if (card.value === 'discardAll') s += k.hand.filter((c) => c !== card && c.color === card.color).length * 12;
@@ -221,6 +226,10 @@ function pickNormal(state: GameState, k: Knowledge, playable: Card[]): Card {
     if (card.value === 'wildDiscardAll' || custom === 'discardColor') s += mostHeld(k.hand.filter((c) => c !== card), k.colors).count * 12;
     if (custom === 'swapHands' || custom === 'shuffleHands') s += fewestOther < k.hand.length - 2 ? 150 : -30;
     if (custom === 'everyoneDraws2' || custom === 'skipTwo') s += 40;
+    // All Wild: every card is a wild, so play the plain ones and save the action cards.
+    if (k.colorless && card.value === 'wild') s += 5;
+    if (card.value === 'wildSwap') s += fewestOther < k.hand.length - 2 ? 150 : -30;
+    if (card.value === 'wildTarget2' && fewestOther <= 2) s += 200;
     if (nextSize <= 2 && attack) s += 200; // ...unless the next player is about to win
     if (state.pendingDraw > 0) s += 50 - drawAmount(card) * 8;
     if (card.value === 'skipAll' || card.value === 10 || custom === 'playAgain') s += 25; // another turn
@@ -265,7 +274,15 @@ function pickStrong(state: GameState, k: Knowledge, playable: Card[], level: Bot
 
 /** Expert: imagine the game playing out after each move and keep the one that wins most often. */
 function lookAhead(state: GameState, k: Knowledge, moves: Card[][], random: () => number): Card[] | null {
-  const candidates: Candidate[] = moves.map((cards) => {
+  // Identical cards make identical moves: think about each one once.
+  const seen = new Set<string>();
+  const distinct = moves.filter((cards) => {
+    const key = cards.map(faceKey).join('+');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const candidates: Candidate[] = distinct.map((cards) => {
     const last = cards[cards.length - 1]!;
     const rest = k.hand.filter((c) => !cards.includes(c));
     if (discardsAColor(state, last)) return { cards, color: wildDiscardChoice(k, rest, 'expert', random).color };
@@ -307,10 +324,13 @@ function scoreMove(state: GameState, k: Knowledge, move: Card[], level: BotDiffi
 
   // Stopping cards are worth most against someone close to going out; otherwise save them.
   // Head to head, though, stopping the only opponent is a free extra turn: chain them.
-  const stops = drawAmount(last) > 0 || value === 'skip' || value === 'wildColor' || value === 'roulette' || (value === 'reverse' && !multiPlayer);
+  const reverses = value === 'reverse' || value === 'wildReverse';
+  const stops =
+    drawAmount(last) > 0 || value === 'skip' || value === 'wildSkip' || value === 'wildSkip2' ||
+    value === 'wildColor' || value === 'roulette' || (reverses && !multiPlayer);
   if (stops && !multiPlayer) s += 14 + (followers > 0 ? 10 : 0) + (nextSize <= 2 ? 40 : 0);
   else if (stops) s += nextSize <= 2 ? 60 + drawAmount(last) * 4 : nextSize <= 4 ? 8 : -4;
-  if (value === 'reverse' && multiPlayer) {
+  if (reverses && multiPlayer) {
     // A Reverse hands the turn to the previous player instead.
     if (k.sizes[k.prev]! <= 2) s -= 50;
     if (nextSize <= 2) s += 40;
@@ -341,13 +361,20 @@ function scoreMove(state: GameState, k: Knowledge, move: Card[], level: BotDiffi
     if (state.pendingDraw > 0 && k.hand.length + state.pendingDraw >= k.mercyLimit) s += 100;
   }
 
-  // Switch to a color the next player was seen drawing on.
-  if (k.voids[k.next]!.includes(color)) s += 14;
+  if (!k.colorless) {
+    // Switch to a color the next player was seen drawing on.
+    if (k.voids[k.next]!.includes(color)) s += 14;
+    // Expert: how likely is the next player to have an answer at all? (Matters once they're low.)
+    if (expert && nextSize <= 4) s += 12 * (1 - chanceToAnswer(k, k.next, color, last.color === 'wild' ? null : value));
+    // Expert: don't hand the next player the color they named with their last wild.
+    if (expert && k.named[k.next] === color) s -= 14;
+  }
 
-  // Expert: how likely is the next player to have an answer at all? (Matters once they're low.)
-  if (expert && nextSize <= 4) s += 12 * (1 - chanceToAnswer(k, k.next, color, last.color === 'wild' ? null : value));
-  // Expert: don't hand the next player the color they named with their last wild.
-  if (expert && k.named[k.next] === color) s -= 14;
+  // UNO All Wild's special cards.
+  if (value === 'wildSkip2') s += multiPlayer ? 18 + (nextSize <= 2 ? 50 : 0) : 20;
+  // Targeted Draw Two hits whoever is closest to going out, wherever they sit.
+  if (value === 'wildTarget2') s += minOther(k) <= 2 ? 55 : 4;
+  if (value === 'wildSwap' && rest.length > 0) s += rest.length - minOther(k) > 0 ? (rest.length - minOther(k)) * 10 : -40;
 
   // 7-0: swap with whoever has fewest cards, only if that's an upgrade; a 0 gives us the previous hand.
   if (state.rules.sevenZero && rest.length > 0) {
@@ -467,14 +494,16 @@ function playAction(state: GameState, k: Knowledge, cards: Card[], level: BotDif
   const action: Action = { type: 'play', cardIds: cards.map((c) => c.id) };
   if (discardsAColor(state, last)) {
     Object.assign(action, wildDiscardChoice(k, k.hand.filter((c) => !cards.includes(c)), level, random));
-  } else if (last.color === 'wild') {
+  } else if (last.color === 'wild' && !k.colorless) {
     action.color = chooseColor(k, k.hand.filter((c) => !cards.includes(c)), level, random);
   }
-  const swaps = (state.rules.sevenZero && last.value === 7) || customWildFor(state.rules, last.value)?.effect === 'swapHands';
-  if (swaps && k.hand.length > cards.length) {
-    const others = k.sizes.map((_, i) => i).filter((i) => i !== k.seat && !state.out[i]);
-    action.swapWith = level === 'easy' ? pickRandom(others, random) : others.reduce((a, b) => (k.sizes[b]! < k.sizes[a]! ? b : a));
-  }
+  // Swaps and Targeted Draw Two go to whoever has fewest cards (a casual player just picks someone).
+  const others = k.sizes.map((_, i) => i).filter((i) => i !== k.seat && !state.out[i]);
+  const pickTarget = () => (level === 'easy' ? pickRandom(others, random) : others.reduce((a, b) => (k.sizes[b]! < k.sizes[a]! ? b : a)));
+  const swaps =
+    (state.rules.sevenZero && last.value === 7) || last.value === 'wildSwap' || customWildFor(state.rules, last.value)?.effect === 'swapHands';
+  if (swaps && k.hand.length > cards.length) action.swapWith = pickTarget();
+  if (last.value === 'wildTarget2') action.target = pickTarget();
   return action;
 }
 

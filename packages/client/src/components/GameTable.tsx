@@ -64,6 +64,7 @@ function useCountdown(deadline: number | null | undefined): number | null {
 const COLOR_ORDER = ['red', 'yellow', 'green', 'blue', 'pink', 'teal', 'orange', 'purple', 'wild'];
 const VALUE_ORDER = [
   0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+  'wildSkip', 'wildSkip2', 'wildReverse', 'wildTarget2', 'wildSwap',
   'skip', 'skipAll', 'reverse', 'flip', 'discardAll', 'draw1', 'draw2', 'draw4', 'draw5',
   'wild', 'wild2', 'wild4', 'wildColor', 'roulette', 'wildDiscardAll', 'wildRev4', 'wild6', 'wildRev8', 'wild10',
 ];
@@ -78,6 +79,9 @@ function sortHand(hand: CardData[]): CardData[] {
   );
 }
 
+/** Choices a play can need on top of the cards themselves. */
+type PlayChoices = { color?: Color; swapWith?: number; discardColor?: Color; target?: number };
+
 /** Small stable tilt per card so the discard pile looks hand-thrown. */
 function tilt(id: string): number {
   let h = 0;
@@ -90,7 +94,7 @@ export function GameTable({
   turnEndsAt, nextRoundAt, awayIds, notice, events,
 }: GameTableProps) {
   /** A play waiting on a choice: the wild's color, the color to discard, or who to swap hands with. */
-  const [picker, setPicker] = useState<{ kind: 'color' | 'discard' | 'swap'; cardIds: string[]; color?: Color; discardColor?: Color } | null>(null);
+  const [picker, setPicker] = useState<{ kind: 'color' | 'discard' | 'swap' | 'target'; cardIds: string[]; choices: PlayChoices } | null>(null);
   /** Same-number stacking: cards picked so far; the first is the one that must be playable. */
   const [selection, setSelection] = useState<string[]>([]);
   const sending = useRef(false);
@@ -130,6 +134,8 @@ export function GameTable({
   const gameActive = view.phase === 'playing' || view.phase === 'playDrawn' || view.phase === 'chooseColor' || view.phase === 'roulette';
   const yourTurn = view.currentPlayer === view.you && gameActive;
   const noMercy = view.variantId === 'no-mercy';
+  // UNO All Wild has no colors at all.
+  const colorless = view.variantId === 'all-wild';
   const giant = view.variantId === 'giant';
   const sideColors = colorsForSide(view.side);
 
@@ -227,21 +233,23 @@ export function GameTable({
 
   const cardById = (id: string) => view.hand.find((c) => c.id === id)!;
 
-  /** Plays the cards, first asking for a color or a swap target if the last card needs one. */
-  const submitPlay = (cardIds: string[], color?: Color, swapWith?: number, discardColor?: Color) => {
+  /**
+   * Plays the cards, first asking for whatever the last card needs: a color to discard,
+   * the color in play, who to swap hands with, or who draws.
+   */
+  const submitPlay = (cardIds: string[], choices: PlayChoices = {}) => {
     const last = cardById(cardIds[cardIds.length - 1]!);
     const custom = customWildFor(view.rules, last.value)?.effect;
+    const ask = (kind: 'color' | 'discard' | 'swap' | 'target') => setPicker({ kind, cardIds, choices });
     // Wild Discard All asks which color to throw away first, then the color in play.
-    if ((last.value === 'wildDiscardAll' || custom === 'discardColor') && !discardColor) return setPicker({ kind: 'discard', cardIds });
-    if (last.color === 'wild' && last.value !== 'roulette' && !color) return setPicker({ kind: 'color', cardIds, discardColor });
-    const swaps = ((view.rules.sevenZero && last.value === 7) || custom === 'swapHands') && view.hand.length > cardIds.length;
-    if (swaps && swapWith === undefined) return setPicker({ kind: 'swap', cardIds, color });
+    if ((last.value === 'wildDiscardAll' || custom === 'discardColor') && !choices.discardColor) return ask('discard');
+    if (last.color === 'wild' && last.value !== 'roulette' && !colorless && !choices.color) return ask('color');
+    const swaps = ((view.rules.sevenZero && last.value === 7) || custom === 'swapHands' || last.value === 'wildSwap') && view.hand.length > cardIds.length;
+    if (swaps && choices.swapWith === undefined) return ask('swap');
+    if (last.value === 'wildTarget2' && choices.target === undefined) return ask('target');
     setPicker(null);
     setSelection([]);
-    run({
-      type: 'play', cardIds,
-      ...(color ? { color } : {}), ...(swapWith !== undefined ? { swapWith } : {}), ...(discardColor ? { discardColor } : {}),
-    });
+    run({ type: 'play', cardIds, ...choices });
   };
 
   const base = selection.length ? cardById(selection[0]!) : null;
@@ -363,7 +371,7 @@ export function GameTable({
               <Card card={card} className="card--table" />
             </div>
           ))}
-          {view.topCard.color === 'wild' && (
+          {view.topCard.color === 'wild' && !colorless && (
             <span className="discard__color" style={{ background: CARD_COLORS[view.currentColor] }}>{colorName(view.currentColor)}</span>
           )}
           {pending > 0 && <span className="discard__pending" aria-label={`${pending} cards waiting`}>+{pending}</span>}
@@ -464,15 +472,15 @@ export function GameTable({
           title={describeCard(cardById(picker.cardIds[picker.cardIds.length - 1]!), view.rules)}
           subtitle="Which color do you want to throw away? Every card of that color in your hand goes."
           onCancel={() => setPicker(null)}
-          onPick={(discardColor) => submitPlay(picker.cardIds, undefined, undefined, discardColor)}
+          onPick={(discardColor) => submitPlay(picker.cardIds, { ...picker.choices, discardColor })}
         />
       )}
       {picker?.kind === 'color' && (
         <ColorPicker
           colors={sideColors}
-          {...(picker.discardColor ? { title: 'Now choose the color in play' } : {})}
+          {...(picker.choices.discardColor ? { title: 'Now choose the color in play' } : {})}
           onCancel={() => setPicker(null)}
-          onPick={(color) => submitPlay(picker.cardIds, color, undefined, picker.discardColor)}
+          onPick={(color) => submitPlay(picker.cardIds, { ...picker.choices, color })}
         />
       )}
       {yourTurn && view.phase === 'chooseColor' && (
@@ -490,7 +498,15 @@ export function GameTable({
         <SwapPicker
           view={view}
           onCancel={() => setPicker(null)}
-          onPick={(seat) => submitPlay(picker.cardIds, picker.color, seat)}
+          onPick={(seat) => submitPlay(picker.cardIds, { ...picker.choices, swapWith: seat })}
+        />
+      )}
+      {picker?.kind === 'target' && (
+        <SwapPicker
+          view={view}
+          title="Who draws 2?"
+          onCancel={() => setPicker(null)}
+          onPick={(seat) => submitPlay(picker.cardIds, { ...picker.choices, target: seat })}
         />
       )}
 

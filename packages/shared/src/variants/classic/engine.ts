@@ -159,7 +159,7 @@ function dispatch(state: GameState, seat: number, action: Action, events: GameEv
 function play(
   state: GameState,
   seat: number,
-  { cardIds, color: chosenColor, swapWith, discardColor }: { cardIds: string[]; color?: Color; swapWith?: number; discardColor?: Color },
+  { cardIds, color: chosenColor, swapWith, discardColor, target }: { cardIds: string[]; color?: Color; swapWith?: number; discardColor?: Color; target?: number },
   events: GameEvent[],
 ): string | null {
   const { rules } = state;
@@ -207,8 +207,9 @@ function play(
   if (handAfter === 0 && rules.noActionFinish && typeof last.value !== 'number') {
     return 'Your last card has to be a number card';
   }
-  // Color Roulette is the exception: the next player picks its color.
-  const namesColor = last.color === 'wild' && last.value !== 'roulette';
+  // Color Roulette is the exception: the next player picks its color. (UNO All Wild has no colors at all.)
+  const colorless = deckFor(state.variantId).colorless === true;
+  const namesColor = !colorless && last.color === 'wild' && last.value !== 'roulette';
   if (namesColor && !chosenColor) return 'Choose a color for the wild card';
   if (namesColor && !colorsForSide(state.side).includes(chosenColor!)) return 'Choose one of the colors in play';
   // Giant UNO's blank wilds do whatever the host wrote on them.
@@ -216,12 +217,10 @@ function play(
   const discardsColor = last.value === 'wildDiscardAll' || custom === 'discardColor';
   if (discardsColor && (!discardColor || !colorsForSide(state.side).includes(discardColor))) return 'Choose a color to discard';
 
-  const swaps = ((rules.sevenZero && last.value === 7) || custom === 'swapHands') && handAfter > 0;
-  if (swaps) {
-    if (swapWith === undefined || swapWith === seat || !state.players[swapWith] || state.out[swapWith]) {
-      return 'Choose a player to swap hands with';
-    }
-  }
+  const isOpponent = (other: number | undefined) => other !== undefined && other !== seat && !!state.players[other] && !state.out[other];
+  const swaps = ((rules.sevenZero && last.value === 7) || custom === 'swapHands' || last.value === 'wildSwap') && handAfter > 0;
+  if (swaps && !isOpponent(swapWith)) return 'Choose a player to swap hands with';
+  if (last.value === 'wildTarget2' && !isOpponent(target)) return 'Choose who draws 2';
 
   // A +4 is only allowed with no card of the current color (checked if it can be challenged).
   const wild4Illegal = isWildDraw(last) && player.hand.some((c) => !cards.includes(c) && c.color === state.currentColor);
@@ -242,9 +241,9 @@ function play(
     state.currentPlayer = seat;
     events.push({ type: 'jumpedIn', seat });
   }
-  events.push({ type: 'played', seat, cards, color: state.currentColor });
+  events.push({ type: 'played', seat, cards, color: colorless ? null : state.currentColor });
 
-  const handsMoved = applyEffect(state, seat, last, { swapWith, wild4Illegal, colorBefore, discardColor }, events);
+  const handsMoved = applyEffect(state, seat, last, { swapWith, wild4Illegal, colorBefore, discardColor, target }, events);
   // An UNO call only counts for the play that brings you down to one card (a Discard All may do that too).
   if (player.hand.length > 1) player.calledUno = false;
   if (!handsMoved && player.hand.length === 1 && !player.calledUno) state.unoVulnerable = seat;
@@ -260,7 +259,7 @@ function applyEffect(
   state: GameState,
   seat: number,
   card: Card,
-  extra: { swapWith?: number; wild4Illegal: boolean; colorBefore: Color; discardColor?: Color },
+  extra: { swapWith?: number; wild4Illegal: boolean; colorBefore: Color; discardColor?: Color; target?: number },
   events: GameEvent[],
 ): boolean {
   const { rules } = state;
@@ -269,6 +268,7 @@ function applyEffect(
 
   switch (card.value) {
     case 'skip':
+    case 'wildSkip':
       events.push({ type: 'skipped', seat: next });
       state.currentPlayer = seatAfter(state, seat, 2);
       return false;
@@ -280,6 +280,7 @@ function applyEffect(
       return false;
 
     case 'reverse':
+    case 'wildReverse':
       state.direction = state.direction === 1 ? -1 : 1;
       events.push({ type: 'reversed', direction: state.direction });
       if (activeSeats(state).length === 2) {
@@ -325,6 +326,24 @@ function applyEffect(
       state.phase = 'roulette';
       state.currentPlayer = next;
       return false;
+
+    case 'wildSkip2':
+      skipTwo(state, seat, events);
+      return false;
+
+    case 'wildTarget2':
+      // All Wild: the player you pick draws 2, but keeps their turn.
+      events.push({ type: 'targeted', seat, target: extra.target!, count: 2 });
+      drawCards(state, extra.target!, 2, events);
+      state.currentPlayer = next;
+      return false;
+
+    case 'wildSwap':
+      state.currentPlayer = next;
+      if (player.hand.length === 0 || extra.swapWith === undefined) return false;
+      swapHands(state, seat, extra.swapWith);
+      events.push({ type: 'swapped', seat, with: extra.swapWith });
+      return true;
 
     case 'custom1':
     case 'custom2':
@@ -408,9 +427,7 @@ function customEffect(
       events.push({ type: 'swapped', seat, with: extra.swapWith });
       return true;
     case 'skipTwo':
-      // With three players or fewer, that's everyone else: you go again.
-      for (const skipped of others.length <= 2 ? others : [next, seatAfter(state, seat, 2)]) events.push({ type: 'skipped', seat: skipped });
-      state.currentPlayer = others.length <= 2 ? seat : seatAfter(state, seat, 3);
+      skipTwo(state, seat, events);
       return false;
     case 'playAgain':
       events.push({ type: 'playAgain', seat });
@@ -422,6 +439,14 @@ function customEffect(
     case 'wild':
       return false;
   }
+}
+
+/** The next two players miss their turn. With three players or fewer, that's everyone else: you go again. */
+function skipTwo(state: GameState, seat: number, events: GameEvent[]): void {
+  const others = activeSeats(state).filter((i) => i !== seat);
+  const skipped = others.length <= 2 ? others : [seatAfter(state, seat), seatAfter(state, seat, 2)];
+  for (const s of skipped) events.push({ type: 'skipped', seat: s });
+  state.currentPlayer = others.length <= 2 ? seat : seatAfter(state, seat, 3);
 }
 
 /** Everyone's cards are shuffled together and dealt back out one at a time, starting with the next player. */
@@ -766,15 +791,16 @@ function dealRound(state: GameState, events: GameEvent[]): void {
     }
   }
 
-  // Wilds (and Flip cards) can't start the round: put them back and reshuffle.
+  // Wilds (and Flip cards...) can't start the round: put them back and reshuffle.
   let start = state.drawPile.pop()!;
-  while (!config.canStart(start) || start.color === 'wild') {
+  while (!config.canStart(start)) {
     state.drawPile.unshift(start);
     state.rng = shuffle(state.drawPile, state.rng);
     start = state.drawPile.pop()!;
   }
   state.discardPile.push(start);
-  state.currentColor = start.color;
+  // (UNO All Wild starts on a Wild; it has no colors, so any color will do.)
+  state.currentColor = start.color === 'wild' ? 'red' : start.color;
 
   // The starting card acts as if the dealer had played it (7-0 swaps don't apply).
   const first = seatAfter(state, state.dealer);

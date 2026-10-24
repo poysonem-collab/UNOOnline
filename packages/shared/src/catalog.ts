@@ -34,8 +34,8 @@ export const VARIANT_CATALOG: VariantListing[] = [
   {
     id: 'all-wild',
     name: 'UNO All Wild',
-    description: 'Every card is wild, so there is no matching at all.',
-    locked: true,
+    description: 'Every card is wild: no matching, no colors. Play anything, with Skip Two, Targeted Draw Two and Forced Swap.',
+    locked: false,
   },
   {
     id: 'giant',

@@ -582,6 +582,8 @@ button:disabled { cursor: not-allowed; }
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
+  /* Blur the table behind, so the question in front is the only thing to read. */
+  backdrop-filter: blur(3px);
   display: grid;
   place-items: center;
   padding: 16px;

@@ -101,13 +101,13 @@ export function parseAction(input: unknown): Action | null {
       if (!Array.isArray(ids) || ids.length === 0 || ids.length > MAX_CARDS_PER_PLAY) return null;
       if (!ids.every((id) => typeof id === 'string' && id.length <= 20)) return null;
       if (raw.color !== undefined && !ALL_COLORS.includes(raw.color as Color)) return null;
-      const swapWith = raw.swapWith;
-      if (swapWith !== undefined && !(Number.isInteger(swapWith) && (swapWith as number) >= 0 && (swapWith as number) < MAX_PLAYERS)) {
-        return null;
-      }
+      const isSeat = (v: unknown) => v === undefined || (Number.isInteger(v) && (v as number) >= 0 && (v as number) < MAX_PLAYERS);
+      const { swapWith, target } = raw;
+      if (!isSeat(swapWith) || !isSeat(target)) return null;
       const action: Action = { type: 'play', cardIds: ids as string[] };
       if (raw.color !== undefined) action.color = raw.color as Color;
       if (swapWith !== undefined) action.swapWith = swapWith as number;
+      if (target !== undefined) action.target = target as number;
       if (raw.discardColor !== undefined) {
         if (!ALL_COLORS.includes(raw.discardColor as Color)) return null;
         action.discardColor = raw.discardColor as Color;

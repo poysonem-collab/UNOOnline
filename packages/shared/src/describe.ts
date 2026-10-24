@@ -21,6 +21,11 @@ const VALUE_NAMES: Record<string, string> = {
   roulette: 'Wild Color Roulette',
   wildRev8: 'Wild Reverse Draw 8',
   wildDiscardAll: 'Wild Discard All',
+  wildSkip: 'Wild Skip',
+  wildSkip2: 'Wild Skip Two',
+  wildReverse: 'Wild Reverse',
+  wildTarget2: 'Wild Targeted Draw Two',
+  wildSwap: 'Wild Forced Swap',
 };
 
 export function colorName(color: Color): string {
@@ -42,7 +47,7 @@ export function describeEvent(event: GameEvent, players: PlayerInfo[], you: numb
   switch (event.type) {
     case 'played': {
       const card = event.cards[0]!;
-      const suffix = card.color === 'wild' ? ` (${colorName(event.color)})` : '';
+      const suffix = card.color === 'wild' && event.color ? ` (${colorName(event.color)})` : '';
       return `${name(event.seat)} played ${event.cards.map((c) => describeCard(c, rules)).join(', ')}${suffix}`;
     }
     case 'drew':
@@ -79,6 +84,8 @@ export function describeEvent(event: GameEvent, players: PlayerInfo[], you: numb
       return `${name(event.seat)} skipped everyone and goes again`;
     case 'shuffledHands':
       return "Everyone's hands were shuffled together and dealt back out";
+    case 'targeted':
+      return `${name(event.seat)} made ${event.target === you ? 'you' : name(event.target)} draw ${event.count}`;
     case 'everyoneDrew':
       return `Everyone except ${name(event.seat)} draws ${event.count}`;
     case 'playAgain':

@@ -34,6 +34,11 @@ takes up to a minute.
   - Points games play to 1,000 (numbers face value, colored action cards 20, wilds 50).
   - **Expansion Pack** (optional host rule): adds 10s (play again), Wild Discard All (pick a color to
     throw away, then the color in play) and Wild Reverse Draw 8. The pack's coins aren't included yet.
+- **UNO All Wild**: every card is wild, so any card goes on any card and nobody picks a color.
+  112 cards: 54 Wild, 10 Wild Draw Two, 6 Wild Draw Four, 14 Wild Skip, 6 Wild Skip Two, 14 Wild
+  Reverse, 4 Wild Targeted Draw Two (you pick who draws 2; they keep their turn) and 4 Wild Forced
+  Swap (trade hands with anyone). Scoring: a plain Wild 20, every action card 50. Hosts can turn on
+  stacking draw cards.
 - **Giant UNO**: the classic game with supersized cards, plus two blank wild cards to write your
   own rules on. The host names each one and picks what it does: plain wild, everyone else draws 2,
   shuffle hands (everyone's cards dealt back out evenly), swap hands, skip two players, play again,
@@ -58,7 +63,9 @@ players close to 25.
 
 In 4-player games with one bot of each level, they win roughly 10% / 24% / 30% / 35% of games
 (Easy / Normal / Hard / Expert), and each level beats the one below it head to head. No Mercy
-is wilder and rewards thinking ahead more: there it's about 9% / 18% / 27% / 46%.
+is wilder and rewards thinking ahead more: there it's about 9% / 18% / 27% / 46%. All Wild leaves
+less room for skill (any card fits): head to head, Normal beats Easy and Hard beats Normal about
+two games in three, while Hard and Expert play about even.
 
 ## Table themes
 
@@ -161,5 +168,7 @@ That server must list the Pages address in its `CORS_ORIGINS` setting (see `rend
 - [x] UNO Show 'Em No Mercy (plus the optional Expansion Pack cards)
 - [x] Table themes
 - [x] Giant UNO
+- [x] Easier-to-read table (piles fit the screen, status panel, compact phone layout)
+- [x] UNO All Wild
 
 UNO is a trademark of Mattel. This is an unofficial fan project; the card art is drawn from scratch.

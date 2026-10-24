@@ -37,7 +37,13 @@ export type WildValue =
   | 'wildDiscardAll'
   // Giant UNO's blank wild cards, which do what the host wrote on them (see RuleSet.customWilds)
   | 'custom1'
-  | 'custom2';
+  | 'custom2'
+  // UNO All Wild (which also uses wild, wild2 and wild4)
+  | 'wildSkip'
+  | 'wildSkip2'
+  | 'wildReverse'
+  | 'wildTarget2'
+  | 'wildSwap';
 export type CardValue = NumberValue | ActionValue | WildValue;
 
 /** One printed face of a card. `dark` marks UNO Flip's dark side (it changes how wilds look). */
@@ -195,7 +201,7 @@ export interface RoundResult {
 
 export type Action =
   /** With several cards (same-number stacking) the first must be playable; the last decides the color. */
-  | { type: 'play'; cardIds: string[]; color?: Color; swapWith?: number; discardColor?: Color }
+  | { type: 'play'; cardIds: string[]; color?: Color; swapWith?: number; discardColor?: Color; target?: number }
   /** Takes one card, or the pending penalty when one is waiting. */
   | { type: 'draw' }
   | { type: 'pass' }
@@ -207,7 +213,8 @@ export type Action =
   | { type: 'chooseColor'; color: Color };
 
 export type GameEvent =
-  | { type: 'played'; seat: number; cards: Card[]; color: Color }
+  /** `color` is the color now in play (null in UNO All Wild, which has no colors). */
+  | { type: 'played'; seat: number; cards: Card[]; color: Color | null }
   | { type: 'drew'; seat: number; count: number }
   | { type: 'passed'; seat: number }
   | { type: 'skipped'; seat: number }
@@ -226,6 +233,7 @@ export type GameEvent =
   | { type: 'playAgain'; seat: number }
   | { type: 'shuffledHands'; seat: number }
   | { type: 'everyoneDrew'; seat: number; count: number }
+  | { type: 'targeted'; seat: number; target: number; count: number }
   | { type: 'discardedAll'; seat: number; color: Color; count: number }
   | { type: 'roulette'; seat: number; color: Color; count: number }
   | { type: 'eliminated'; seat: number }

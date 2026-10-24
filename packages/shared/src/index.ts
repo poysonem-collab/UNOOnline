@@ -1,5 +1,6 @@
 import { classic } from './variants/classic/index.js';
 import { flip } from './variants/flip/index.js';
+import { allWild } from './variants/allwild/index.js';
 import { giant } from './variants/giant/index.js';
 import { noMercy } from './variants/nomercy/index.js';
 import type { Variant } from './variants/Variant.js';
@@ -17,6 +18,8 @@ export { buildFlipDecks, flipPoints } from './variants/flip/deck.js';
 export { noMercy } from './variants/nomercy/index.js';
 export { buildNoMercyDecks, noMercyPoints } from './variants/nomercy/deck.js';
 export { giant } from './variants/giant/index.js';
+export { allWild } from './variants/allwild/index.js';
+export { allWildPoints, buildAllWildDecks } from './variants/allwild/deck.js';
 export { buildGiantDecks } from './variants/giant/deck.js';
 export { CUSTOM_EFFECT_INFO, customWildFor, customWildTitle, GIANT_CUSTOM_WILDS, MAX_CUSTOM_NAME } from './variants/giant/customWilds.js';
 export { deckFor } from './variants/decks.js';
@@ -29,6 +32,7 @@ export const VARIANTS: Record<string, Variant> = {
   [flip.id]: flip,
   [noMercy.id]: noMercy,
   [giant.id]: giant,
+  [allWild.id]: allWild,
 };
 
 export function getVariant(id: string): Variant {

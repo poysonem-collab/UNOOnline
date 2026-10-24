@@ -24,9 +24,13 @@ const OVAL_TILT = 'rotate(30 60 90)';
 type Value = CardFace['value'];
 
 /** Each printed deck has its own look: UNO Show 'Em No Mercy cards have black borders, for one. */
-export type CardTheme = 'classic' | 'nomercy';
+export type CardTheme = 'classic' | 'nomercy' | 'allwild';
 export const CardThemeContext = createContext<CardTheme>('classic');
-export const cardThemeFor = (variantId: string): CardTheme => (variantId === 'no-mercy' ? 'nomercy' : 'classic');
+export const cardThemeFor = (variantId: string): CardTheme =>
+  variantId === 'no-mercy' ? 'nomercy' : variantId === 'all-wild' ? 'allwild' : 'classic';
+
+/** Cards that only exist in UNO All Wild. */
+const ALL_WILD_ONLY = new Set<Value>(['wildSkip', 'wildSkip2', 'wildReverse', 'wildTarget2', 'wildSwap']);
 
 /** Giant UNO: what the host wrote on the blank wild cards in this game. */
 export const CustomWildsContext = createContext<CustomWild[]>([]);
@@ -90,6 +94,7 @@ function CardArt({ card }: { card: CardFace }) {
   if (card.value === 'custom1' || card.value === 'custom2') {
     return <BlankWildArt title={customWildTitle(customWildFor({ customWilds }, card.value)!)} />;
   }
+  if (theme === 'allwild' || ALL_WILD_ONLY.has(card.value)) return <AllWildArt value={card.value} />;
   if (theme === 'nomercy' || NO_MERCY_ONLY.has(card.value)) return <NoMercyArt card={card} />;
   const dark = Boolean(card.dark);
   if (card.color === 'wild') return <WildArt value={card.value} dark={dark} />;
@@ -530,4 +535,80 @@ function BlankWildArt({ title }: { title: string }) {
       <Corners><FourColorOval rx={7} ry={11} border={1.5} colors={LIGHT_WILD} /></Corners>
     </svg>
   );
+}
+
+// ---------------------------------------------------------------------------
+// UNO All Wild: every card is a wild, with its action drawn in white on the four-color oval.
+
+function AllWildArt({ value }: { value: Value }) {
+  const label = value === 'wild2' || value === 'wildTarget2' ? '+2' : value === 'wild4' ? '+4' : null;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="card__svg">
+      <Frame face={BLACK} />
+      <g transform="translate(60 90)"><FourColorOval rx={40} ry={64} border={4} colors={LIGHT_WILD} /></g>
+      <AllWildCenter value={value} />
+      <Corners>
+        {value === 'wild' ? (
+          <FourColorOval rx={7} ry={11} border={1.5} colors={LIGHT_WILD} />
+        ) : label && value !== 'wildTarget2' ? (
+          <OutlinedText size={22} fill="#fff">{label}</OutlinedText>
+        ) : (
+          <g transform="scale(10)"><AllWildSymbol value={value} /></g>
+        )}
+      </Corners>
+    </svg>
+  );
+}
+
+function AllWildCenter({ value }: { value: Value }) {
+  if (value === 'wild') return null;
+  if (value === 'wild2' || value === 'wild4') {
+    return <g transform="translate(60 90)"><OutlinedText size={52} fill="#fff" shadow>{value === 'wild2' ? '+2' : '+4'}</OutlinedText></g>;
+  }
+  if (value === 'wildTarget2') {
+    return (
+      <>
+        <g transform="translate(60 80) scale(28)"><AllWildSymbol value={value} /></g>
+        <g transform="translate(60 128)"><OutlinedText size={26} fill="#fff">+2</OutlinedText></g>
+      </>
+    );
+  }
+  return <g transform="translate(60 90) scale(30)"><AllWildSymbol value={value} /></g>;
+}
+
+/** White symbols with a black outline, in a unit box centered on (0, 0). */
+function AllWildSymbol({ value }: { value: Value }) {
+  if (value === 'wildSkip') return <ActionSymbol value="skip" fill="#fff" outline />;
+  if (value === 'wildReverse') return <ActionSymbol value="reverse" fill="#fff" outline />;
+  if (value === 'wildSkip2') {
+    // Two Skips, one for each player who misses out.
+    return (
+      <>
+        <g transform="translate(-0.32 -0.3) scale(0.68)"><ActionSymbol value="skip" fill="#fff" outline /></g>
+        <g transform="translate(0.32 0.3) scale(0.68)"><ActionSymbol value="skip" fill="#fff" outline /></g>
+      </>
+    );
+  }
+  if (value === 'wildTarget2') {
+    // Crosshairs: you pick who it hits.
+    const sight = (color: string, width: number) => (
+      <g fill="none" stroke={color} strokeWidth={width} strokeLinecap="round">
+        <circle r="0.58" />
+        <circle r="0.2" />
+        <path d="M 0 -0.92 V -0.4 M 0 0.4 V 0.92 M -0.92 0 H -0.4 M 0.4 0 H 0.92" />
+      </g>
+    );
+    return <>{sight(BLACK, 0.3)}{sight('#fff', 0.15)}</>;
+  }
+  if (value === 'wildSwap') {
+    // Two arrows trading places.
+    const arrow = 'M -0.7 -0.42 H 0.35 V -0.62 L 0.78 -0.3 L 0.35 0.02 V -0.18 H -0.7 Z';
+    return (
+      <g fill="#fff" stroke={BLACK} strokeWidth="0.07" strokeLinejoin="round">
+        <path d={arrow} />
+        <path d={arrow} transform="rotate(180)" />
+      </g>
+    );
+  }
+  return null;
 }
