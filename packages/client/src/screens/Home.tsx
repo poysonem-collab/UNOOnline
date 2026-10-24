@@ -1,5 +1,6 @@
 import { VARIANT_CATALOG } from '@uno/shared';
 import { Card } from '../components/Card';
+import { ONLINE_AVAILABLE } from '../net/socket';
 
 const PREVIEW_CARDS = [
   { id: 'p1', color: 'red', value: 7 },
@@ -9,7 +10,7 @@ const PREVIEW_CARDS = [
   { id: 'p5', color: 'yellow', value: 'draw2' },
 ] as const;
 
-export function Home({ onChoose }: { onChoose: (variantId: string) => void }) {
+export function Home({ onChoose, onJoinFriend }: { onChoose: (variantId: string) => void; onJoinFriend: () => void }) {
   return (
     <main className="home">
       <header className="home__hero">
@@ -22,6 +23,9 @@ export function Home({ onChoose }: { onChoose: (variantId: string) => void }) {
         </div>
         <h1>UNO Online</h1>
         <p className="home__tagline">Play with friends or bots, up to 10 players.</p>
+        {ONLINE_AVAILABLE && (
+          <button type="button" className="btn home__join" onClick={onJoinFriend}>Have a room code? Join a friend →</button>
+        )}
       </header>
 
       <h2 className="home__heading">Choose a game</h2>

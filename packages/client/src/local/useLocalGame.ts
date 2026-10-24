@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BOT_CATCH_CHANCE,
+  BOT_NAMES,
   describeEvent,
   getVariant,
   randomSeed,
@@ -27,7 +28,6 @@ export interface LogEntry {
 
 /** The human always sits in seat 0. */
 const YOU = 0;
-const BOT_NAMES = ['Ava', 'Ben', 'Cleo', 'Dex', 'Elle', 'Finn', 'Gus', 'Hana', 'Ivy'];
 
 function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);

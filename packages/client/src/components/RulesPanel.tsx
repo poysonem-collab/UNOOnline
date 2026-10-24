@@ -1,11 +1,4 @@
-import type { RuleSet } from '@uno/shared';
-
-/** Fewer cards than this left after dealing means a second deck is needed. */
-const MIN_DRAW_PILE = 10;
-
-export function needsTwoDecks(playerCount: number, handSize: number): boolean {
-  return playerCount * handSize >= 108 - MIN_DRAW_PILE;
-}
+import { HAND_SIZES, needsTwoDecks, type RuleSet } from '@uno/shared';
 
 interface RulesPanelProps {
   rules: RuleSet;
@@ -35,7 +28,7 @@ export function RulesPanel({ rules, onChange, playerCount, online, readOnly }: R
       <label className="field">
         <span>Starting hand</span>
         <select value={rules.handSize} onChange={(e) => set('handSize', Number(e.target.value))}>
-          {[5, 6, 7, 8, 9, 10].map((n) => <option key={n} value={n}>{n} cards</option>)}
+          {HAND_SIZES.map((n) => <option key={n} value={n}>{n} cards</option>)}
         </select>
       </label>
 

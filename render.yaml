@@ -1,0 +1,17 @@
+# Render blueprint: runs the game server, which also serves the website.
+# In Render: New → Blueprint → pick this repo. See README for details.
+services:
+  - type: web
+    name: unoonline
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Lets the GitHub Pages copy of the site connect to this server too.
+      - key: CORS_ORIGINS
+        value: https://poysonem-collab.github.io
