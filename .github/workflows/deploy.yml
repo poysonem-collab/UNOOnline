@@ -28,9 +28,9 @@ jobs:
       - run: npm test
       - run: npm run build -w @uno/client
         env:
-          # This copy of the site has no game server, so online play is hidden.
-          # To use a Render server instead, replace with VITE_SERVER_URL: https://<your-app>.onrender.com
-          VITE_ONLINE: 'off'
+          # This copy of the site uses the game server running on Render.
+          # (render.yaml lets this site connect via CORS_ORIGINS.)
+          VITE_SERVER_URL: https://unoonline-y7vw.onrender.com
       - uses: actions/upload-pages-artifact@v3
         with:
           path: packages/client/dist

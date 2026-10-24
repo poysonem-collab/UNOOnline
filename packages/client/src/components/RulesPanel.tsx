@@ -9,12 +9,16 @@ interface RulesPanelProps {
   readOnly?: boolean;
 }
 
-const HOUSE_RULES: { key: keyof RuleSet; label: string; hint: string }[] = [
-  { key: 'stackDraws', label: 'Stack +2 / +4', hint: 'Answer a draw card with your own to pass the total on.' },
-  { key: 'stackSameNumber', label: 'Stack same numbers', hint: 'Play several cards of the same number at once.' },
-  { key: 'sevenZero', label: '7-0', hint: '7 swaps hands with someone, 0 passes every hand along.' },
-  { key: 'jumpIn', label: 'Jump-in', hint: 'Play an identical card out of turn.' },
-  { key: 'drawUntilPlayable', label: 'Draw until playable', hint: 'Keep drawing until you can play.' },
+type HouseRule = 'stackDraws' | 'stackSameNumber' | 'sevenZero' | 'jumpIn' | 'drawUntilPlayable' | 'challengeWild4' | 'noActionFinish';
+
+const HOUSE_RULES: { key: HouseRule; label: string; hint: string }[] = [
+  { key: 'stackDraws', label: 'Stack +2 / +4', hint: 'Hit with a draw card? Play your own to pass the total on to the next player.' },
+  { key: 'stackSameNumber', label: 'Stack same numbers', hint: 'Play several cards of the same number at once, in any colors.' },
+  { key: 'sevenZero', label: '7-0', hint: 'Playing a 7 swaps hands with a player you choose. Playing a 0 passes every hand along.' },
+  { key: 'jumpIn', label: 'Jump-in', hint: 'Have the exact same card as the top one? Play it any time, even out of turn.' },
+  { key: 'drawUntilPlayable', label: 'Draw until playable', hint: 'Keep drawing until you get a card you can play.' },
+  { key: 'challengeWild4', label: 'Challenge Wild +4', hint: 'A +4 is only allowed with no card of the current color. Challenge it: a bluffer draws 4, otherwise you draw 6.' },
+  { key: 'noActionFinish', label: 'No finishing on action cards', hint: 'Your last card has to be a number card.' },
 ];
 
 export function RulesPanel({ rules, onChange, playerCount, online, readOnly }: RulesPanelProps) {
@@ -64,15 +68,26 @@ export function RulesPanel({ rules, onChange, playerCount, online, readOnly }: R
         </label>
       )}
 
-      <h3 className="rules__heading">House rules <span className="soon">coming soon</span></h3>
+      <h3 className="rules__heading">House rules</h3>
       {HOUSE_RULES.map(({ key, label, hint }) => (
-        <label key={key} className="toggle toggle--soon" title={hint}>
-          <input type="checkbox" checked={Boolean(rules[key])} disabled />
-          <span>
-            <strong>{label}</strong>
-            <small>{hint}</small>
-          </span>
-        </label>
+        <div key={key}>
+          <label className="toggle">
+            <input type="checkbox" checked={rules[key]} onChange={(e) => set(key, e.target.checked)} />
+            <span>
+              <strong>{label}</strong>
+              <small>{hint}</small>
+            </span>
+          </label>
+          {key === 'stackDraws' && rules.stackDraws && (
+            <label className="toggle toggle--sub">
+              <input type="checkbox" checked={rules.stackPlus2OnPlus4} onChange={(e) => set('stackPlus2OnPlus4', e.target.checked)} />
+              <span>
+                <strong>Allow +2 on a +4</strong>
+                <small>Only in the color the +4 picked. A +4 can always go on a +2.</small>
+              </span>
+            </label>
+          )}
+        </div>
       ))}
     </fieldset>
   );

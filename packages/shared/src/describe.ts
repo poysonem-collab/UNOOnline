@@ -41,6 +41,18 @@ export function describeEvent(event: GameEvent, players: PlayerInfo[], you: numb
       return `${name(event.seat)} called UNO!`;
     case 'caughtUno':
       return `${name(event.by)} caught ${name(event.target)} without UNO! +2`;
+    case 'jumpedIn':
+      return `${name(event.seat)} jumped in!`;
+    case 'drawStacked':
+      return `${name(event.next)} must take ${event.total} cards`;
+    case 'swapped':
+      return `${name(event.seat)} swapped hands with ${event.with === you ? 'you' : name(event.with)}`;
+    case 'rotated':
+      return 'Everyone passed their hand along';
+    case 'challenged':
+      return event.success
+        ? `${name(event.by)} challenged the +4: ${name(event.target)} was bluffing and takes the cards!`
+        : `${name(event.by)} challenged the +4, but it was legal: +2 extra`;
     case 'roundOver':
       return `${name(event.winner)} won the round (+${event.points} points)`;
     case 'gameOver':

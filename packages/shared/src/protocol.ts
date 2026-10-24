@@ -88,6 +88,7 @@ export function parseAction(input: unknown): Action | null {
     case 'draw':
     case 'pass':
     case 'callUno':
+    case 'challenge':
       return { type: raw.type };
     case 'catchUno':
       return Number.isInteger(raw.target) && (raw.target as number) >= 0 && (raw.target as number) < MAX_PLAYERS
@@ -98,8 +99,13 @@ export function parseAction(input: unknown): Action | null {
       if (!Array.isArray(ids) || ids.length === 0 || ids.length > MAX_CARDS_PER_PLAY) return null;
       if (!ids.every((id) => typeof id === 'string' && id.length <= 20)) return null;
       if (raw.color !== undefined && !COLORS.includes(raw.color as Color)) return null;
+      const swapWith = raw.swapWith;
+      if (swapWith !== undefined && !(Number.isInteger(swapWith) && (swapWith as number) >= 0 && (swapWith as number) < MAX_PLAYERS)) {
+        return null;
+      }
       const action: Action = { type: 'play', cardIds: ids as string[] };
       if (raw.color !== undefined) action.color = raw.color as Color;
+      if (swapWith !== undefined) action.swapWith = swapWith as number;
       return action;
     }
     default:

@@ -96,15 +96,20 @@ describe('lobby server', () => {
     expect(result).toEqual({ ok: false, error: 'No room with code ZZZZ' });
   });
 
-  it('broadcasts host rule changes, and ignores rules that are not offered yet', async () => {
+  it('broadcasts host rule changes, and throws out invalid values', async () => {
     const { c: host, joined } = await createRoom();
     const { c: guest } = await joinRoom(joined.code);
-    const update = nextState(guest);
-    ok(await host.emitWithAck('room:updateRules', { ...DEFAULT_RULES, handSize: 5, jumpIn: true, winCondition: 'points500' }));
+    const update = nextState(guest, (l) => l.rules.jumpIn);
+    ok(await host.emitWithAck('room:updateRules', {
+      ...DEFAULT_RULES,
+      handSize: 5,
+      jumpIn: true,
+      winCondition: 'points500',
+      deckCount: 7 as 1,
+      stackDraws: 'yes' as unknown as boolean,
+    }));
     const lobby = await update;
-    expect(lobby.rules.handSize).toBe(5);
-    expect(lobby.rules.winCondition).toBe('points500');
-    expect(lobby.rules.jumpIn).toBe(false);
+    expect(lobby.rules).toMatchObject({ handSize: 5, jumpIn: true, winCondition: 'points500', deckCount: 1, stackDraws: false });
   });
 
   it('does not let guests change rules', async () => {

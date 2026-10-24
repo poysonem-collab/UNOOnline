@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BOT_CATCH_CHANCE,
+  BOT_JUMP_IN_CHANCE,
+  playableIdsFromView,
   BOT_NAMES,
   describeEvent,
   getVariant,
@@ -99,6 +101,25 @@ export function useLocalGame(config: LocalGameConfig) {
     return () => clearTimeout(timer);
   }, [state.unoVulnerable, act, config.difficulty]);
 
+  // With jump-in on, a bot holding an identical card may play it out of turn.
+  useEffect(() => {
+    if (!state.rules.jumpIn || (state.phase !== 'playing' && state.phase !== 'playDrawn')) return;
+    const jumpers = state.players
+      .map((_, seat) => seat)
+      .filter((seat) => state.players[seat]!.isBot && seat !== state.currentPlayer)
+      .filter((seat) => Math.random() < BOT_JUMP_IN_CHANCE[config.difficulty])
+      .filter((seat) => variant.chooseBotJumpIn(state, seat, config.difficulty, Math.random) !== null);
+    if (jumpers.length === 0) return;
+    const seat = jumpers[Math.floor(Math.random() * jumpers.length)]!;
+    const timer = setTimeout(() => {
+      if (stateRef.current !== state) return;
+      for (const action of variant.chooseBotJumpIn(state, seat, config.difficulty, Math.random) ?? []) {
+        if (act(seat, action)) break;
+      }
+    }, randomBetween(500, 1300));
+    return () => clearTimeout(timer);
+  }, [state, act, variant, config.difficulty]);
+
   const nextRound = useCallback(() => commit(variant.startNextRound(stateRef.current)), [commit, variant]);
 
   const [gameNumber, setGameNumber] = useState(1);
@@ -111,9 +132,7 @@ export function useLocalGame(config: LocalGameConfig) {
   }, [config]);
 
   const view: PlayerView = variant.getPlayerView(state, YOU);
-  const playableIds = new Set(
-    state.currentPlayer === YOU ? variant.playableCards(state, YOU).map((c) => c.id) : [],
-  );
+  const playableIds = playableIdsFromView(view);
 
   return {
     /** Changes whenever a new deal starts, so the table can reset its piles. */

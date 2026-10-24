@@ -1,5 +1,6 @@
 import {
   BOT_CATCH_CHANCE,
+  BOT_JUMP_IN_CHANCE,
   type Action,
   type BotDifficulty,
   type GameEvent,
@@ -45,6 +46,7 @@ export class GameRunner {
   private turnTimer: NodeJS.Timeout | undefined;
   private botTimer: NodeJS.Timeout | undefined;
   private catchTimer: NodeJS.Timeout | undefined;
+  private jumpInTimer: NodeJS.Timeout | undefined;
   private nextRoundTimer: NodeJS.Timeout | undefined;
   private turnDeadline: number | null = null;
   private nextRoundAt: number | null = null;
@@ -145,7 +147,8 @@ export class GameRunner {
 
   dispose(): void {
     this.disposed = true;
-    for (const timer of [this.turnTimer, this.botTimer, this.catchTimer, this.nextRoundTimer, ...this.takeoverTimers.values()]) {
+    const timers = [this.turnTimer, this.botTimer, this.catchTimer, this.jumpInTimer, this.nextRoundTimer, ...this.takeoverTimers.values()];
+    for (const timer of timers) {
       clearTimeout(timer);
     }
     this.takeoverTimers.clear();
@@ -159,6 +162,7 @@ export class GameRunner {
     this.scheduleRoundEnd();
     this.schedule();
     this.scheduleCatch(events);
+    this.scheduleJumpIn();
     this.ids.forEach((id, seat) => {
       if (this.state.players[seat]!.isBot) return;
       const update = this.updateFor(id, events);
@@ -189,16 +193,42 @@ export class GameRunner {
   }
 
   private playForSeat(seat: number, difficulty: BotDifficulty): void {
+    this.runBotActions(seat, this.variant.chooseBotMove(this.state, seat, difficulty, this.options.random));
+  }
+
+  private runBotActions(seat: number, actions: Action[]): void {
     const events: GameEvent[] = [];
-    let newTurn = false;
-    for (const action of this.variant.chooseBotMove(this.state, seat, difficulty, this.options.random)) {
+    for (const action of actions) {
       const result = this.variant.applyAction(this.state, seat, action);
       if (!result.ok) break;
       this.state = result.state;
       events.push(...result.events);
-      newTurn ||= action.type === 'play' || action.type === 'pass' || (action.type === 'draw' && this.state.phase !== 'playDrawn');
     }
-    this.afterChange(events, newTurn);
+    // Drawing a playable card keeps the same turn going; anything else moves it on.
+    const sameTurn = actions.at(-1)?.type === 'draw' && this.state.phase === 'playDrawn';
+    this.afterChange(events, !sameTurn);
+  }
+
+  /** With jump-in on, a bot holding an identical card may slap it down out of turn. */
+  private scheduleJumpIn(): void {
+    clearTimeout(this.jumpInTimer);
+    if (!this.state.rules.jumpIn || !this.isActive()) return;
+    const random = this.options.random;
+    const jumpers = this.ids
+      .map((_, seat) => seat)
+      .filter((seat) => this.state.players[seat]!.isBot && seat !== this.state.currentPlayer)
+      .filter((seat) => random() < BOT_JUMP_IN_CHANCE[this.difficulty[seat] ?? 'normal'])
+      .filter((seat) => this.variant.chooseBotJumpIn(this.state, seat, 'normal', random) !== null);
+    if (jumpers.length === 0) return;
+    const seat = jumpers[Math.floor(random() * jumpers.length)]!;
+    const [min, max] = this.options.botDelayMs;
+    const before = this.state;
+    // Reaction time: sometimes faster than the player whose turn it is, sometimes not.
+    this.jumpInTimer = setTimeout(() => {
+      if (this.state !== before) return;
+      const actions = this.variant.chooseBotJumpIn(this.state, seat, this.difficulty[seat] ?? 'normal', random);
+      if (actions) this.runBotActions(seat, actions);
+    }, min * 0.6 + random() * (max - min));
   }
 
   /** When the turn timer runs out: draw, and keep the card. */

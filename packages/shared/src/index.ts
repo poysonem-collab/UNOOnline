@@ -9,7 +9,7 @@ export * from './protocol.js';
 export * from './ruleSettings.js';
 export type { Variant, BotDifficulty } from './variants/Variant.js';
 export { classic } from './variants/classic/index.js';
-export { BOT_CATCH_CHANCE } from './variants/classic/bot.js';
+export { BOT_CATCH_CHANCE, BOT_JUMP_IN_CHANCE } from './variants/classic/bot.js';
 export { buildClassicDeck, cardPoints } from './variants/classic/deck.js';
 export { canPlayOn, playableIdsFromView } from './variants/classic/rules.js';
 

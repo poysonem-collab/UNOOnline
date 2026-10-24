@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { classic, DEFAULT_RULES, nextRandom, playableIdsFromView, type GameUpdate, type RuleSet } from '@uno/shared';
+import { classic, DEFAULT_RULES, nextRandom, playableIdsFromView, type Action, type GameUpdate, type RuleSet } from '@uno/shared';
 import { GameRunner, type RunnerOptions, type RunnerSeat } from '../src/game/GameRunner.js';
 
 function seeded(seed: number): () => number {
@@ -30,13 +30,17 @@ function start(seats: RunnerSeat[], rules: Partial<RuleSet> = {}, seed = 7) {
 }
 
 /** A legal move for a human, worked out only from what they can see. */
-function humanMove(update: GameUpdate) {
-  const playable = [...playableIdsFromView(update.view)];
+function humanMove(update: GameUpdate): Action {
+  const { view } = update;
+  const playable = [...playableIdsFromView(view)];
   if (playable.length) {
-    const card = update.view.hand.find((c) => c.id === playable[0])!;
-    return { type: 'play' as const, cardIds: [card.id], ...(card.color === 'wild' ? { color: 'red' as const } : {}) };
+    const card = view.hand.find((c) => c.id === playable[0])!;
+    const action: Action = { type: 'play', cardIds: [card.id] };
+    if (card.color === 'wild') action.color = 'red';
+    if (view.rules.sevenZero && card.value === 7) action.swapWith = (view.you + 1) % view.players.length;
+    return action;
   }
-  return update.view.phase === 'playDrawn' ? { type: 'pass' as const } : { type: 'draw' as const };
+  return view.phase === 'playDrawn' ? { type: 'pass' } : { type: 'draw' };
 }
 
 beforeEach(() => {
@@ -63,6 +67,27 @@ describe('GameRunner', () => {
     // Updates only ever go to humans, and only contain their own hand.
     expect(received.every((r) => r.to === 'me' && r.update.view.you === 0)).toBe(true);
     runner.dispose();
+  });
+
+  it('plays full games with every house rule, bots jumping in', () => {
+    const rules: Partial<RuleSet> = {
+      stackDraws: true, stackPlus2OnPlus4: true, stackSameNumber: true, sevenZero: true,
+      jumpIn: true, drawUntilPlayable: true, challengeWild4: true, noActionFinish: true,
+    };
+    let jumpIns = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const { runner, latest, received } = start([human('me'), bot('b1'), bot('b2'), bot('b3')], rules, seed);
+      for (let i = 0; i < 5_000 && runner.phase !== 'gameOver'; i++) {
+        const update = latest.get('me')!;
+        const myTurn = update.view.currentPlayer === 0 && (runner.phase === 'playing' || runner.phase === 'playDrawn');
+        if (myTurn) expect(runner.apply('me', humanMove(update))).toBeNull();
+        else vi.advanceTimersByTime(300);
+      }
+      expect(runner.phase).toBe('gameOver');
+      jumpIns += received.filter((r) => r.update.events.some((e) => e.type === 'jumpedIn')).length;
+      runner.dispose();
+    }
+    expect(jumpIns).toBeGreaterThan(0);
   });
 
   it('sends each human only their own cards', () => {

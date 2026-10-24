@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { colorName, describeCard, type Action, type Card as CardData, type PlayerView } from '@uno/shared';
+import { colorName, describeCard, type Action, type Card as CardData, type Color, type PlayerView } from '@uno/shared';
 import { Card, CardBack, CARD_COLORS } from './Card';
 import { ColorPicker } from './ColorPicker';
 import { Opponent } from './Opponent';
+import { SwapPicker } from './SwapPicker';
 import type { LogEntry } from '../local/useLocalGame';
 
 export interface EndAction {
@@ -67,7 +68,10 @@ export function GameTable({
   view, log, playableIds, onAction, endActions, endNote, onExit, exitLabel = '← Menu',
   turnEndsAt, nextRoundAt, awayIds, notice,
 }: GameTableProps) {
-  const [pendingWild, setPendingWild] = useState<string | null>(null);
+  /** A play waiting on a choice: the wild's color, or who to swap hands with. */
+  const [picker, setPicker] = useState<{ kind: 'color' | 'swap'; cardIds: string[]; color?: Color } | null>(null);
+  /** Same-number stacking: cards picked so far; the first is the one that must be playable. */
+  const [selection, setSelection] = useState<string[]>([]);
   const sending = useRef(false);
   const secondsLeft = useCountdown(turnEndsAt);
   const [error, setError] = useState<string | null>(null);
@@ -106,15 +110,51 @@ export function GameTable({
     });
   };
 
-  const playCard = (card: CardData) => {
-    if (card.color === 'wild') setPendingWild(card.id);
-    else run({ type: 'play', cardIds: [card.id] });
+  // A selection only makes sense while those cards can still be played.
+  useEffect(() => {
+    if (selection.length && !playableIds.has(selection[0]!)) setSelection([]);
+  }, [playableIds, selection]);
+
+  const cardById = (id: string) => view.hand.find((c) => c.id === id)!;
+
+  /** Plays the cards, first asking for a color or a swap target if the last card needs one. */
+  const submitPlay = (cardIds: string[], color?: Color, swapWith?: number) => {
+    const last = cardById(cardIds[cardIds.length - 1]!);
+    if (last.color === 'wild' && !color) return setPicker({ kind: 'color', cardIds });
+    const swaps = view.rules.sevenZero && last.value === 7 && view.hand.length > cardIds.length;
+    if (swaps && swapWith === undefined) return setPicker({ kind: 'swap', cardIds, color });
+    setPicker(null);
+    setSelection([]);
+    run({ type: 'play', cardIds, ...(color ? { color } : {}), ...(swapWith !== undefined ? { swapWith } : {}) });
   };
 
-  const canCallUno = gameActive && view.hand.length <= 2 && !you.calledUno;
+  const base = selection.length ? cardById(selection[0]!) : null;
+  const isExtra = (card: CardData) => base !== null && card.id !== base.id && card.value === base.value;
+
+  const tapCard = (card: CardData) => {
+    if (base) {
+      if (isExtra(card)) {
+        setSelection((sel) => (sel.includes(card.id) ? sel.filter((id) => id !== card.id) : [...sel, card.id]));
+      }
+      return;
+    }
+    if (!playableIds.has(card.id)) return;
+    // With same-number stacking, holding more of this number starts a selection.
+    const more = view.rules.stackSameNumber && typeof card.value === 'number' && view.hand.some((c) => c.id !== card.id && c.value === card.value);
+    if (more) setSelection([card.id]);
+    else submitPlay([card.id]);
+  };
+
+  const pending = view.pendingDraw;
+  const canCallUno =
+    gameActive && !you.calledUno && (view.hand.length <= 2 || (selection.length > 0 && view.hand.length - selection.length === 1));
+  const canJumpIn = !yourTurn && gameActive && playableIds.size > 0;
   const current = view.players[view.currentPlayer]!;
   const status =
     !gameActive ? ''
+    : yourTurn && pending > 0 && view.canChallenge && playableIds.size === 0 ? `+${pending} on you! Take the cards or challenge the +4`
+    : yourTurn && pending > 0 && playableIds.size === 0 ? `Take ${pending} cards`
+    : yourTurn && pending > 0 ? `Stack a draw card to pass it on, or take ${pending} cards`
     : yourTurn && view.phase === 'playDrawn' ? 'Play the card you drew, or keep it'
     : yourTurn ? 'Your turn: play a card or draw'
     : awayIds?.has(current.id) ? `Waiting for ${current.name} to reconnect…`
@@ -154,7 +194,7 @@ export function GameTable({
           type="button" className="draw-pile"
           onClick={() => run({ type: 'draw' })}
           disabled={!yourTurn || view.phase !== 'playing'}
-          aria-label={`Draw a card (${view.drawPileCount} left)`}
+          aria-label={pending > 0 && yourTurn ? `Take ${pending} cards` : `Draw a card (${view.drawPileCount} left)`}
         >
           <CardBack className="card--table draw-pile__under" />
           <CardBack className="card--table" />
@@ -170,12 +210,14 @@ export function GameTable({
           {view.topCard.color === 'wild' && (
             <span className="discard__color" style={{ background: CARD_COLORS[view.currentColor] }}>{colorName(view.currentColor)}</span>
           )}
+          {pending > 0 && <span className="discard__pending" aria-label={`${pending} cards waiting`}>+{pending}</span>}
         </div>
       </section>
 
       <section className="status" aria-live="polite">
         <div className={`status__turn ${yourTurn ? 'status__turn--you' : ''}`}>
           {status}
+          {canJumpIn && <span className="status__jump">You can jump in!</span>}
           {gameActive && secondsLeft !== null && (
             <span className={`timer ${secondsLeft <= 5 ? 'timer--urgent' : ''}`} aria-label={`${secondsLeft} seconds left`}>{secondsLeft}s</span>
           )}
@@ -187,24 +229,49 @@ export function GameTable({
 
       <section className="you">
         <div className="you__controls">
-          <button type="button" className={`btn btn--uno ${canCallUno && view.hand.length <= 2 ? 'btn--pulse' : ''}`} onClick={() => run({ type: 'callUno' })} disabled={!canCallUno}>
+          <button type="button" className={`btn btn--uno ${canCallUno ? 'btn--pulse' : ''}`} onClick={() => run({ type: 'callUno' })} disabled={!canCallUno}>
             UNO!
           </button>
-          {yourTurn && view.phase === 'playDrawn' && (
+          {selection.length > 0 && (
+            <>
+              <button type="button" className="btn btn--primary" onClick={() => submitPlay(selection)}>
+                Play {selection.length} card{selection.length === 1 ? '' : 's'}
+              </button>
+              <button type="button" className="btn btn--ghost" onClick={() => setSelection([])}>Cancel</button>
+            </>
+          )}
+          {yourTurn && pending > 0 && selection.length === 0 && (
+            <button type="button" className="btn" onClick={() => run({ type: 'draw' })}>Take {pending} cards</button>
+          )}
+          {yourTurn && view.canChallenge && selection.length === 0 && (
+            <button type="button" className="btn btn--challenge" onClick={() => run({ type: 'challenge' })}>Challenge +4</button>
+          )}
+          {yourTurn && view.phase === 'playDrawn' && selection.length === 0 && (
             <button type="button" className="btn" onClick={() => run({ type: 'pass' })}>Keep card</button>
           )}
           {you.calledUno && view.hand.length === 1 && <span className="badge badge--uno">UNO!</span>}
         </div>
+        {base && (
+          <p className="you__hint">Tap your other {String(base.value)}s to play them too. The last one you pick sets the color.</p>
+        )}
         <div className="hand" style={{ ['--n' as string]: hand.length }}>
           {hand.map((card) => {
-            const playable = yourTurn && playableIds.has(card.id);
+            const selected = selection.includes(card.id);
+            const tappable = base ? selected || isExtra(card) : playableIds.has(card.id);
+            const classes = [
+              'card--hand',
+              tappable && !base ? (yourTurn ? 'card--playable' : 'card--jumpin') : '',
+              base && isExtra(card) && !selected ? 'card--selectable' : '',
+              selected ? 'card--selected' : '',
+              card.id === view.drawnCardId ? 'card--drawn' : '',
+            ];
             return (
               <Card
                 key={card.id}
                 card={card}
-                className={`card--hand ${playable ? 'card--playable' : ''} ${card.id === view.drawnCardId ? 'card--drawn' : ''}`}
-                onClick={() => playCard(card)}
-                disabled={!playable}
+                className={classes.join(' ')}
+                onClick={() => tapCard(card)}
+                disabled={!tappable}
               />
             );
           })}
@@ -213,13 +280,14 @@ export function GameTable({
 
       {error && <div className="toast" role="alert">{error}</div>}
 
-      {pendingWild && (
-        <ColorPicker
-          onCancel={() => setPendingWild(null)}
-          onPick={(color) => {
-            run({ type: 'play', cardIds: [pendingWild], color });
-            setPendingWild(null);
-          }}
+      {picker?.kind === 'color' && (
+        <ColorPicker onCancel={() => setPicker(null)} onPick={(color) => submitPlay(picker.cardIds, color)} />
+      )}
+      {picker?.kind === 'swap' && (
+        <SwapPicker
+          view={view}
+          onCancel={() => setPicker(null)}
+          onPick={(seat) => submitPlay(picker.cardIds, picker.color, seat)}
         />
       )}
 

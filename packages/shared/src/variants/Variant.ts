@@ -24,4 +24,6 @@ export interface Variant {
   playableCards(state: GameState, seat: number): Card[];
   /** The actions a bot takes on its turn, in order. */
   chooseBotMove(state: GameState, seat: number, difficulty: BotDifficulty, random: () => number): Action[];
+  /** A bot's out-of-turn jump-in, if it has one. */
+  chooseBotJumpIn(state: GameState, seat: number, difficulty: BotDifficulty, random: () => number): Action[] | null;
 }

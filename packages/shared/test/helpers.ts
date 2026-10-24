@@ -41,6 +41,8 @@ export function makeState(opts: {
     phase: 'playing',
     drawnCardId: null,
     unoVulnerable: null,
+    pendingDraw: 0,
+    wild4Check: null,
     dealer: opts.hands.length - 1,
     roundWinner: null,
     gameWinner: null,
