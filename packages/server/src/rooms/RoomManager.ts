@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import type { Server, Socket } from 'socket.io';
 import {
+  BOT_LEVELS,
   cleanName,
   getVariant,
   normalizeRoomCode,
@@ -82,7 +83,7 @@ export class RoomManager {
     socket.on('room:addBot', (req, ack) =>
       this.handle(ack, () => {
         const { room, playerId } = this.requireBinding(socket);
-        const difficulty: BotDifficulty = req?.difficulty === 'easy' ? 'easy' : 'normal';
+        const difficulty: BotDifficulty = BOT_LEVELS.includes(req?.difficulty) ? req.difficulty : 'normal';
         room.addBot(playerId, difficulty);
         this.broadcast(room);
         return {};

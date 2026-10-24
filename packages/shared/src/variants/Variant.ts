@@ -8,7 +8,7 @@ import type {
   RuleSet,
 } from '../types.js';
 
-export type BotDifficulty = 'easy' | 'normal';
+export type BotDifficulty = 'easy' | 'normal' | 'hard' | 'expert';
 
 /** Every UNO version (classic, Flip, No Mercy, ...) implements this. */
 export interface Variant {

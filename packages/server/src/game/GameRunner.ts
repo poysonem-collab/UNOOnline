@@ -1,6 +1,7 @@
 import {
   BOT_CATCH_CHANCE,
   BOT_JUMP_IN_CHANCE,
+  BOT_REACTION,
   type Action,
   type BotDifficulty,
   type GameEvent,
@@ -223,12 +224,13 @@ export class GameRunner {
     const seat = jumpers[Math.floor(random() * jumpers.length)]!;
     const [min, max] = this.options.botDelayMs;
     const before = this.state;
+    const level = this.difficulty[seat] ?? 'normal';
     // Reaction time: sometimes faster than the player whose turn it is, sometimes not.
     this.jumpInTimer = setTimeout(() => {
       if (this.state !== before) return;
-      const actions = this.variant.chooseBotJumpIn(this.state, seat, this.difficulty[seat] ?? 'normal', random);
+      const actions = this.variant.chooseBotJumpIn(this.state, seat, level, random);
       if (actions) this.runBotActions(seat, actions);
-    }, min * 0.6 + random() * (max - min));
+    }, (min * 0.6 + random() * (max - min)) * BOT_REACTION[level]);
   }
 
   /** When the turn timer runs out: draw, and keep the card (or pick a color for them). */
@@ -283,12 +285,14 @@ export class GameRunner {
     const catchers = this.ids.map((_, i) => i).filter((i) => i !== target && this.state.players[i]!.isBot);
     if (catchers.length === 0) return;
     const catcher = catchers[Math.floor(this.options.random() * catchers.length)]!;
-    if (this.options.random() >= BOT_CATCH_CHANCE[this.difficulty[catcher] ?? 'normal']) return;
+    const level = this.difficulty[catcher] ?? 'normal';
+    if (this.options.random() >= BOT_CATCH_CHANCE[level]) return;
     clearTimeout(this.catchTimer);
     const [min, max] = this.options.botDelayMs;
+    // Sharper players notice sooner.
     this.catchTimer = setTimeout(() => {
       if (this.state.unoVulnerable === target) this.apply(this.ids[catcher]!, { type: 'catchUno', target });
-    }, min + max * this.options.random());
+    }, (min + max * this.options.random()) * BOT_REACTION[level]);
   }
 
   private isActive(): boolean {

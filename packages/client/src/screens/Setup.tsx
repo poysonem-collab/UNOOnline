@@ -12,7 +12,8 @@ import {
   type JoinedRoom,
   type RuleSet,
 } from '@uno/shared';
-import { RulesPanel, Segmented } from '../components/RulesPanel';
+import { BotSkill } from '../components/BotSkill';
+import { RulesPanel } from '../components/RulesPanel';
 import type { LocalGameConfig } from '../local/useLocalGame';
 import { api, ONLINE_AVAILABLE } from '../net/socket';
 import { clearSession, loadName, loadSession, saveName } from '../net/session';
@@ -153,10 +154,7 @@ export function Setup({ variantId, initialTab, initialCode, notice, onStart, onJ
           </div>
           <p className="hint">{playerCount} players in total (max {MAX_PLAYERS}).</p>
 
-          <div className="field">
-            <span>Bot skill</span>
-            <Segmented value={difficulty} options={[['easy', 'Easy'], ['normal', 'Normal']]} onChange={setDifficulty} />
-          </div>
+          <BotSkill value={difficulty} onChange={setDifficulty} />
 
           <RulesPanel variantId={variantId} rules={rules} onChange={setRules} playerCount={playerCount} />
 

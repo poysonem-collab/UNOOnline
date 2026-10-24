@@ -1,14 +1,65 @@
-import { ALL_COLORS, colorsForSide, type Action, type Card, type Color, type GameState } from '../../types.js';
+import { ALL_COLORS, colorsForSide, type Action, type Card, type CardFace, type Color, type GameState } from '../../types.js';
+import { deckFor } from '../decks.js';
 import type { BotDifficulty } from '../Variant.js';
 import { canChallenge } from './engine.js';
-import { drawAmount, jumpInCards, playableCards, seatAfter } from './rules.js';
+import { lookaheadSupported, rateCandidates, type Candidate } from './lookahead.js';
+import { drawAmount, isWildDraw, jumpInCards, playableCards, seatAfter } from './rules.js';
+
+/**
+ * Bots at four levels, modelled on how real people play UNO:
+ *
+ * - Easy: a casual player. Plays whatever matches first, wastes wilds, picks colors at
+ *   random, sometimes draws without noticing a playable card, and often forgets UNO.
+ * - Normal: a typical family player. Saves wilds, names the color they hold most of,
+ *   attacks a player who's about to win, usually remembers UNO.
+ * - Hard: an experienced player. Plans the next turn (keeps cards that follow on), saves
+ *   Skips and Draws for when they matter, keeps a wild to finish on, switches to colors the
+ *   next player was seen drawing on, defends points, and challenges only when it pays.
+ * - Expert: a card counter who thinks ahead. Everything Hard does, plus it tracks every card
+ *   played, remembers the colors opponents named with wilds (they hold those), and before
+ *   each choice imagines how the game could play out from there (see lookahead.ts). In UNO
+ *   Flip it reads everyone's visible card backs before deciding to flip.
+ *
+ * Bots only use what a player at the table could know: their own hand, cards played so far,
+ * hand sizes, who drew on which color, what colors were named with wilds, and (in Flip) the
+ * backs of other players' cards.
+ */
+
+export const BOT_LEVELS: BotDifficulty[] = ['easy', 'normal', 'hard', 'expert'];
+
+interface Profile {
+  /** Chance of remembering to call UNO. */
+  callUno: number;
+  /** Chance of noticing a player who forgot to call UNO. */
+  catchUno: number;
+  /** Chance of noticing a jump-in chance. */
+  jumpIn: number;
+  /** How fast they react to catches and jump-ins (1 = normal, lower = quicker). */
+  reaction: number;
+  /** Chance of drawing despite holding a playable card. */
+  absentMinded: number;
+  /** Chance of keeping a playable card they just drew. */
+  keepsDrawn: number;
+  /** Chance of taking stacked cards instead of stacking back. */
+  missesStack: number;
+}
+
+const PROFILES: Record<BotDifficulty, Profile> = {
+  easy: { callUno: 0.65, catchUno: 0.15, jumpIn: 0.15, reaction: 1.4, absentMinded: 0.08, keepsDrawn: 0.2, missesStack: 0.3 },
+  normal: { callUno: 0.9, catchUno: 0.5, jumpIn: 0.4, reaction: 1, absentMinded: 0.03, keepsDrawn: 0.05, missesStack: 0.1 },
+  hard: { callUno: 1, catchUno: 0.8, jumpIn: 0.65, reaction: 0.8, absentMinded: 0, keepsDrawn: 0, missesStack: 0 },
+  expert: { callUno: 1, catchUno: 0.95, jumpIn: 0.85, reaction: 0.6, absentMinded: 0, keepsDrawn: 0, missesStack: 0 },
+};
+
+const byLevel = <T>(pick: (p: Profile) => T) =>
+  Object.fromEntries(BOT_LEVELS.map((l) => [l, pick(PROFILES[l])])) as Record<BotDifficulty, T>;
 
 /** Chance a bot catches a player who forgot to call UNO. */
-export const BOT_CATCH_CHANCE: Record<BotDifficulty, number> = { easy: 0.25, normal: 0.7 };
-/** Chance a bot remembers to call UNO itself. */
-const BOT_CALL_CHANCE: Record<BotDifficulty, number> = { easy: 0.6, normal: 1 };
+export const BOT_CATCH_CHANCE = byLevel((p) => p.catchUno);
 /** Chance a bot notices it can jump in. */
-export const BOT_JUMP_IN_CHANCE: Record<BotDifficulty, number> = { easy: 0.2, normal: 0.5 };
+export const BOT_JUMP_IN_CHANCE = byLevel((p) => p.jumpIn);
+/** Multiplier for how long a bot takes to react to catches and jump-ins. */
+export const BOT_REACTION = byLevel((p) => p.reaction);
 
 /**
  * Actions the bot in `seat` takes on its turn, in order
@@ -20,64 +71,328 @@ export function chooseBotMove(
   difficulty: BotDifficulty,
   random: () => number,
 ): Action[] {
-  const hand = state.players[seat]!.hand;
-  const colors = colorsForSide(state.side);
-  if (state.phase === 'chooseColor') {
-    return [{ type: 'chooseColor', color: difficulty === 'easy' ? pickRandom([...colors], random) : bestColor(hand, colors, random) }];
-  }
+  const profile = PROFILES[difficulty];
+  const k = know(state, seat);
+
+  if (state.phase === 'chooseColor') return [{ type: 'chooseColor', color: chooseColor(k, k.hand, difficulty, random) }];
+
   const playable = playableCards(state, seat);
+  const takeOrDraw: Action = state.phase === 'playDrawn' ? { type: 'pass' } : { type: 'draw' };
 
   if (playable.length === 0) {
-    if (state.pendingDraw > 0 && canChallenge(state) && shouldChallenge(state, difficulty, random)) {
+    if (state.pendingDraw > 0 && canChallenge(state) && shouldChallenge(state, k, difficulty, random)) {
       return [{ type: 'challenge' }];
     }
-    return [state.phase === 'playDrawn' ? { type: 'pass' } : { type: 'draw' }];
+    return [takeOrDraw];
   }
 
-  const card = difficulty === 'easy' ? pickRandom(playable, random) : pickBestCard(state, seat, playable);
-  const cards = difficulty === 'easy' ? [card] : withSameNumbers(state, hand, card);
-  return withUnoCall(state, seat, hand.length - cards.length, difficulty, random, playAction(state, seat, cards, difficulty, random));
+  // Human slips: not noticing a playable card, keeping a drawn one, or forgetting to stack back.
+  if (state.phase === 'playing' && state.pendingDraw === 0 && random() < profile.absentMinded) return [{ type: 'draw' }];
+  if (state.phase === 'playDrawn' && random() < profile.keepsDrawn) return [{ type: 'pass' }];
+  if (state.pendingDraw > 0 && random() < profile.missesStack) return [{ type: 'draw' }];
+
+  let cards: Card[];
+  if (difficulty === 'easy') {
+    cards = [pickRandom(playable, random)];
+  } else if (difficulty === 'normal') {
+    cards = withSameNumbers(state, k.hand, pickNormal(state, k, playable));
+  } else {
+    const best = pickStrong(state, k, playable, difficulty, random);
+    // A strong player keeps a freshly drawn wild for later instead of spending it now.
+    if (!best) return [takeOrDraw];
+    cards = best;
+  }
+  return withUnoCall(state, seat, k.hand.length - cards.length, profile, random, playAction(state, k, cards, difficulty, random));
 }
 
-/** A bot's jump-in, if it has an identical card (normal bots only take ones that help). */
+/** A bot's out-of-turn jump-in, if it has an identical card. */
 export function chooseBotJumpIn(state: GameState, seat: number, difficulty: BotDifficulty, random: () => number): Action[] | null {
   const card = jumpInCards(state, seat)[0];
   if (!card) return null;
-  const hand = state.players[seat]!.hand;
-  const cards = difficulty === 'easy' ? [card] : withSameNumbers(state, hand, card);
-  return withUnoCall(state, seat, hand.length - cards.length, difficulty, random, playAction(state, seat, cards, difficulty, random));
+  const k = know(state, seat);
+  const cards = difficulty === 'easy' ? [card] : withSameNumbers(state, k.hand, card);
+  return withUnoCall(state, seat, k.hand.length - cards.length, PROFILES[difficulty], random, playAction(state, k, cards, difficulty, random));
 }
 
-function withUnoCall(
-  state: GameState,
-  seat: number,
-  handAfter: number,
-  difficulty: BotDifficulty,
-  random: () => number,
-  play: Action,
-): Action[] {
-  const remembers = random() < BOT_CALL_CHANCE[difficulty];
+// ---------------------------------------------------------------------------
+// What a player at the table knows
+
+interface Knowledge {
+  seat: number;
+  hand: Card[];
+  sizes: number[];
+  next: number;
+  prev: number;
+  voids: Color[][];
+  named: (Color | null)[];
+  colors: readonly Color[];
+  /** Cards of each face not yet seen (not played, not in our hand), keyed `color:value`. */
+  unseen: Map<string, number>;
+  unseenTotal: number;
+  /** The same unseen cards as a list of faces, for imagining other players' hands. */
+  unseenFaces: CardFace[];
+  /** UNO Flip: the backs of other players' cards (null for ourselves and in classic games). */
+  backs: (CardFace[] | null)[];
+  pointsMode: boolean;
+  points: (card: CardFace) => number;
+}
+
+const faceKey = (card: CardFace) => `${card.color}:${String(card.value)}`;
+
+function know(state: GameState, seat: number): Knowledge {
+  const hand = state.players[seat]!.hand;
+  // Which faces exist is public (it's the deck list), so count every card's face in play...
+  const unseen = new Map<string, number>();
+  const all = [...state.drawPile, ...state.discardPile, ...state.players.flatMap((p) => p.hand)];
+  for (const card of all) unseen.set(faceKey(card), (unseen.get(faceKey(card)) ?? 0) + 1);
+  // ...then take away the ones we've actually seen: played cards and our own hand.
+  for (const card of [...state.discardPile, ...hand]) unseen.set(faceKey(card), (unseen.get(faceKey(card)) ?? 1) - 1);
+  const remaining = new Map(unseen);
+  const unseenFaces: CardFace[] = [];
+  for (const card of all) {
+    const key = faceKey(card);
+    if ((remaining.get(key) ?? 0) > 0) {
+      remaining.set(key, remaining.get(key)! - 1);
+      unseenFaces.push({ color: card.color, value: card.value } as CardFace);
+    }
+  }
+  return {
+    seat,
+    hand,
+    sizes: state.players.map((p) => p.hand.length),
+    next: seatAfter(state, seat),
+    prev: seatAfter(state, seat, -1),
+    voids: state.voids,
+    named: state.named,
+    colors: colorsForSide(state.side),
+    unseen,
+    unseenTotal: all.length - state.discardPile.length - hand.length,
+    unseenFaces,
+    backs: state.players.map((p, i) => (state.side && i !== seat ? p.hand.map((c) => c.other!) : null)),
+    pointsMode: state.rules.winCondition === 'points500',
+    points: deckFor(state.variantId).points,
+  };
+}
+
+/** How likely `seat` is to hold at least one card matching color/value (from cards not yet seen). */
+function chanceToAnswer(k: Knowledge, seat: number, color: Color, value: CardFace['value'] | null): number {
+  if (k.unseenTotal <= 0) return 0.5;
+  const voidColor = k.voids[seat]!.includes(color);
+  let matching = 0;
+  for (const [key, count] of k.unseen) {
+    const [c, v] = key.split(':');
+    if (c === 'wild' || (!voidColor && c === color) || (value !== null && v === String(value))) matching += count;
+  }
+  const miss = Math.max(0, 1 - matching / k.unseenTotal);
+  return 1 - miss ** k.sizes[seat]!;
+}
+
+// ---------------------------------------------------------------------------
+// Choosing a card
+
+/** Normal: the classic sensible-player rules of thumb. */
+function pickNormal(state: GameState, k: Knowledge, playable: Card[]): Card {
+  const nextSize = k.sizes[k.next]!;
+  const counts = countColors(k.hand);
+  const fewestOther = minOther(k);
+  const score = (card: Card): number => {
+    const attack = drawAmount(card) > 0 || ['skip', 'skipAll', 'reverse', 'wildColor'].includes(String(card.value));
+    let s = 0;
+    if (card.color === 'wild') s -= 100; // hold wilds for when nothing else works...
+    if (nextSize <= 2 && attack) s += 200; // ...unless the next player is about to win
+    if (state.pendingDraw > 0) s += 50 - drawAmount(card) * 8;
+    if (card.value === 'skipAll') s += 25;
+    if (state.rules.sevenZero && card.value === 7) s += fewestOther < k.hand.length - 2 ? 150 : -30;
+    if (typeof card.value === 'number') s += card.value;
+    else if (card.color !== 'wild') s += 15;
+    if (card.color !== 'wild') s += counts[card.color] * 2;
+    if (state.rules.stackSameNumber && typeof card.value === 'number') {
+      s += (k.hand.filter((c) => c.value === card.value).length - 1) * 12;
+    }
+    return s;
+  };
+  return playable.reduce((best, card) => (score(card) > score(best) ? card : best));
+}
+
+/**
+ * Hard and Expert: score each possible play by what it does to our hand and to the next
+ * player. Returns null when the best move is to keep a card we just drew.
+ */
+function pickStrong(state: GameState, k: Knowledge, playable: Card[], level: BotDifficulty, random: () => number): Card[] | null {
+  const expert = level === 'expert';
+  const moves = playable.map((card) => withSameNumbers(state, k.hand, card));
+  // Expert: think a few turns ahead when there's a real choice to make.
+  if (expert && lookaheadSupported(state) && moves.length + (state.phase === 'playDrawn' ? 1 : 0) >= 2) {
+    return lookAhead(state, k, moves, random);
+  }
+  let best: Card[] = moves[0]!;
+  let bestScore = -Infinity;
+  for (const move of moves) {
+    const s = scoreMove(state, k, move, level) + (random() - 0.5) * (expert ? 2 : 6);
+    if (s > bestScore) {
+      bestScore = s;
+      best = move;
+    }
+  }
+  // Just drew a wild with plenty of cards left and no one about to win? Keep it as a finisher.
+  if (state.phase === 'playDrawn' && best[0]!.color === 'wild' && k.hand.length > 3 && minOther(k) > 2) return null;
+  return best;
+}
+
+/** Expert: imagine the game playing out after each move and keep the one that wins most often. */
+function lookAhead(state: GameState, k: Knowledge, moves: Card[][], random: () => number): Card[] | null {
+  const candidates: Candidate[] = moves.map((cards) => {
+    const last = cards[cards.length - 1]!;
+    const rest = k.hand.filter((c) => !cards.includes(c));
+    return last.color === 'wild' ? { cards, color: chooseColor(k, rest, 'expert', random) } : { cards };
+  });
+  if (state.phase === 'playDrawn') candidates.push({ cards: [] });
+  const rates = rateCandidates(state, k.seat, candidates, k.unseenFaces, k.colors, random);
+  // Close calls go to the rules of thumb.
+  const scores = candidates.map((c, i) => rates[i]! * 100 + (c.cards.length ? scoreMove(state, k, c.cards, 'expert') / 40 : 0));
+  const best = candidates[scores.indexOf(Math.max(...scores))]!;
+  return best.cards.length ? best.cards : null;
+}
+
+function scoreMove(state: GameState, k: Knowledge, move: Card[], level: BotDifficulty): number {
+  const expert = level === 'expert';
+  const last = move[move.length - 1]!;
+  const rest = k.hand.filter((c) => !move.includes(c));
+  const color = last.color === 'wild' ? chooseColor(k, rest, level, () => 0.5) : last.color;
+  const nextSize = k.sizes[k.next]!;
+  const value = last.value;
+  const multiPlayer = k.sizes.length > 2;
+  let s = 0;
+
+  // Getting rid of cards is the point of the game.
+  s += 10 * move.length;
+
+  // Plan ahead: keep cards that can follow this one if the color sticks.
+  const followers = rest.filter((c) => c.color === 'wild' || c.color === color || c.value === value).length;
+  s += Math.min(followers, 4) * 5;
+  if (rest.length > 0 && followers === 0) s -= 12;
+
+  // Wilds win games at the end: don't spend them early. Keep one as the last card.
+  if (last.color === 'wild') s -= rest.length <= 1 ? 0 : isWildDraw(last) || value === 'wildColor' ? 45 : 35;
+  if (rest.length === 1 && rest[0]!.color === 'wild') s += 30;
+
+  // Stopping cards are worth most against someone close to going out; otherwise save them.
+  // Head to head, though, stopping the only opponent is a free extra turn: chain them.
+  const stops = drawAmount(last) > 0 || value === 'skip' || value === 'wildColor' || (value === 'reverse' && !multiPlayer);
+  if (stops && !multiPlayer) s += 14 + (followers > 0 ? 10 : 0) + (nextSize <= 2 ? 40 : 0);
+  else if (stops) s += nextSize <= 2 ? 60 + drawAmount(last) * 4 : nextSize <= 4 ? 8 : -4;
+  if (value === 'reverse' && multiPlayer) {
+    // A Reverse hands the turn to the previous player instead.
+    if (k.sizes[k.prev]! <= 2) s -= 50;
+    if (nextSize <= 2) s += 40;
+  }
+  if (value === 'skipAll') s += 20;
+
+  // Stacking: pass on the smallest draw card and keep the big ones, unless the next player is nearly out.
+  if (state.pendingDraw > 0) s += nextSize <= 2 ? drawAmount(last) * 5 : 20 - drawAmount(last) * 4;
+
+  // Switch to a color the next player was seen drawing on.
+  if (k.voids[k.next]!.includes(color)) s += 14;
+
+  // Expert: how likely is the next player to have an answer at all? (Matters once they're low.)
+  if (expert && nextSize <= 4) s += 12 * (1 - chanceToAnswer(k, k.next, color, last.color === 'wild' ? null : value));
+  // Expert: don't hand the next player the color they named with their last wild.
+  if (expert && k.named[k.next] === color) s -= 14;
+
+  // 7-0: swap with whoever has fewest cards, only if that's an upgrade; a 0 gives us the previous hand.
+  if (state.rules.sevenZero && rest.length > 0) {
+    if (value === 7) {
+      const gain = rest.length - minOther(k);
+      s += gain > 0 ? gain * 10 : -40;
+    }
+    if (value === 0) s += (rest.length - k.sizes[seatAfter(state, k.seat, -1)]!) * 6;
+  }
+
+  // UNO Flip: an Expert reads the backs it can see. The next player's backs become their hand.
+  if (value === 'flip') s += expert ? flipValue(k) : 4;
+
+  // Someone's about to go out in a points game: shed points while we can.
+  if (k.pointsMode && minOther(k) <= 1) s += move.reduce((sum, c) => sum + k.points(c), 0) * 0.6;
+
+  // With the challenge rule, a +4 while holding the current color is a bluff that can backfire.
+  if (isWildDraw(last) && state.rules.challengeWild4 && rest.some((c) => c.color === state.currentColor)) {
+    s -= nextSize <= 1 ? 0 : 60;
+  }
+  return s;
+}
+
+/** How good flipping looks, judged from the backs of the other players' cards. */
+function flipValue(k: Knowledge): number {
+  const strong = (face: CardFace) => face.color === 'wild' || drawAmount(face) >= 2 || face.value === 'skipAll';
+  const nextBacks = k.backs[k.next] ?? [];
+  const nextStrong = nextBacks.filter(strong).length;
+  const othersStrong = k.backs.reduce((sum, b, i) => sum + (i === k.next || !b ? 0 : b.filter(strong).length), 0);
+  return 14 - nextStrong * 8 - othersStrong * 2 - (nextBacks.length <= 2 ? 30 : 0);
+}
+
+function minOther(k: Knowledge): number {
+  return Math.min(...k.sizes.filter((_, i) => i !== k.seat));
+}
+
+// ---------------------------------------------------------------------------
+// Colors, challenges, and building the action
+
+function chooseColor(k: Knowledge, hand: Card[], level: BotDifficulty, random: () => number): Color {
+  if (level === 'easy') return pickRandom([...k.colors], random);
+  const counts = countColors(hand);
+  const score = (c: Color): number => {
+    let s = counts[c] * 3;
+    if (level === 'normal') return s;
+    if (k.voids[k.next]!.includes(c)) s += 5;
+    if (level === 'expert' && k.named[k.next] === c) s -= 6;
+    return s;
+  };
+  const best = Math.max(...k.colors.map(score));
+  if (best === 0) return pickRandom([...k.colors], random);
+  return k.colors.find((c) => score(c) === best)!;
+}
+
+/**
+ * Challenging a wild draw: a wrong challenge costs 2 extra cards, a right one saves us the
+ * whole penalty, so it pays when the chance of a bluff is above about a third.
+ */
+function shouldChallenge(state: GameState, k: Knowledge, level: BotDifficulty, random: () => number): boolean {
+  const check = state.wild4Check;
+  if (level === 'easy' || !check) return false;
+  if (level === 'normal') return k.sizes[check.seat]! >= 4 && random() < 0.4;
+  let chanceTheyHadIt: number;
+  if (k.voids[check.seat]!.includes(check.colorBefore)) {
+    chanceTheyHadIt = 0.1; // they drew on that color earlier
+  } else {
+    let ofColor = 0;
+    for (const [key, count] of k.unseen) if (key.startsWith(`${check.colorBefore}:`)) ofColor += count;
+    const share = k.unseenTotal > 0 ? ofColor / k.unseenTotal : 0;
+    chanceTheyHadIt = 1 - (1 - share) ** k.sizes[check.seat]!;
+  }
+  return chanceTheyHadIt > (level === 'expert' ? 1 / 3 : 0.45);
+}
+
+function withUnoCall(state: GameState, seat: number, handAfter: number, profile: Profile, random: () => number, play: Action): Action[] {
+  const remembers = random() < profile.callUno;
   return handAfter === 1 && !state.players[seat]!.calledUno && remembers ? [{ type: 'callUno' }, play] : [play];
 }
 
-function playAction(state: GameState, seat: number, cards: Card[], difficulty: BotDifficulty, random: () => number): Action {
-  const hand = state.players[seat]!.hand;
+function playAction(state: GameState, k: Knowledge, cards: Card[], level: BotDifficulty, random: () => number): Action {
   const last = cards[cards.length - 1]!;
   const action: Action = { type: 'play', cardIds: cards.map((c) => c.id) };
   if (last.color === 'wild') {
-    const colors = colorsForSide(state.side);
-    const rest = hand.filter((c) => !cards.includes(c));
-    action.color = difficulty === 'easy' ? pickRandom([...colors], random) : bestColor(rest, colors, random);
+    action.color = chooseColor(k, k.hand.filter((c) => !cards.includes(c)), level, random);
   }
-  if (state.rules.sevenZero && last.value === 7 && hand.length > cards.length) {
-    action.swapWith = difficulty === 'easy' ? pickRandom(opponents(state, seat), random) : smallestHand(state, seat);
+  if (state.rules.sevenZero && last.value === 7 && k.hand.length > cards.length) {
+    const others = k.sizes.map((_, i) => i).filter((i) => i !== k.seat);
+    action.swapWith = level === 'easy' ? pickRandom(others, random) : others.reduce((a, b) => (k.sizes[b]! < k.sizes[a]! ? b : a));
   }
   return action;
 }
 
 /**
  * With same-number stacking, also plays every other card of that number,
- * ending on the color the bot holds most of.
+ * ending on the color we hold most of.
  */
 function withSameNumbers(state: GameState, hand: Card[], first: Card): Card[] {
   if (!state.rules.stackSameNumber || typeof first.value !== 'number') return [first];
@@ -94,64 +409,6 @@ function colorCount(counts: Record<Color, number>, card: Card): number {
 
 function pickRandom<T>(items: T[], random: () => number): T {
   return items[Math.floor(random() * items.length)]!;
-}
-
-function opponents(state: GameState, seat: number): number[] {
-  return state.players.map((_, i) => i).filter((i) => i !== seat);
-}
-
-function smallestHand(state: GameState, seat: number): number {
-  return opponents(state, seat).reduce((best, i) =>
-    state.players[i]!.hand.length < state.players[best]!.hand.length ? i : best,
-  );
-}
-
-function pickBestCard(state: GameState, seat: number, playable: Card[]): Card {
-  const hand = state.players[seat]!.hand;
-  const nextHandSize = state.players[seatAfter(state, seat)]!.hand.length;
-  const colorCounts = countColors(hand);
-  const fewestOther = state.players[smallestHand(state, seat)]!.hand.length;
-
-  const score = (card: Card): number => {
-    const isAttack = drawAmount(card) > 0 || ['skip', 'skipAll', 'reverse', 'wildColor'].includes(String(card.value));
-    let s = 0;
-    // Hold wilds for when nothing else works...
-    if (card.color === 'wild') s -= 100;
-    // ...unless the next player is about to win.
-    if (nextHandSize <= 2 && isAttack) s += 200;
-    // When stacking, pass the cheapest draw card and keep the big ones.
-    if (state.pendingDraw > 0) s += 50 - drawAmount(card) * 8;
-    // Skip Everyone means another turn straight away.
-    if (card.value === 'skipAll') s += 25;
-    // A 7 is worth playing when someone else has a much smaller hand.
-    if (state.rules.sevenZero && card.value === 7) s += fewestOther < hand.length - 2 ? 150 : -30;
-    // Dump high-point cards first, and stay in the color we hold most of.
-    if (typeof card.value === 'number') s += card.value;
-    else if (card.color !== 'wild') s += 15;
-    if (card.color !== 'wild') s += colorCounts[card.color] * 2;
-    // Getting rid of several cards at once is great.
-    if (state.rules.stackSameNumber && typeof card.value === 'number') {
-      s += (hand.filter((c) => c.value === card.value).length - 1) * 12;
-    }
-    return s;
-  };
-
-  return playable.reduce((best, card) => (score(card) > score(best) ? card : best));
-}
-
-/** Bots can't see hands, so they guess: a +4 from someone holding lots of cards is more likely a bluff. */
-function shouldChallenge(state: GameState, difficulty: BotDifficulty, random: () => number): boolean {
-  if (difficulty === 'easy' || !state.wild4Check) return false;
-  const suspectCards = state.players[state.wild4Check.seat]!.hand.length;
-  return suspectCards >= 4 && random() < 0.4;
-}
-
-/** The color (of those in play) the bot holds most of. */
-function bestColor(hand: Card[], colors: readonly Color[], random: () => number): Color {
-  const counts = countColors(hand);
-  const max = Math.max(...colors.map((c) => counts[c]));
-  if (max === 0) return pickRandom([...colors], random);
-  return colors.find((c) => counts[c] === max)!;
 }
 
 function countColors(hand: Card[]): Record<Color, number> {

@@ -25,6 +25,22 @@ takes up to a minute.
 
 Other modes are listed in the menu and unlocked as they're built.
 
+## Bot skill levels
+
+Each level plays like a different kind of real player. Bots only use what a person at the table
+could know: their own hand, cards played so far, hand sizes, who drew on which color, which color
+someone named with a wild, and (in Flip) the backs of other players' cards.
+
+| Level | Plays like | What it does |
+|---|---|---|
+| Easy | A casual player | Plays whatever matches, wastes wilds, picks colors at random, sometimes misses a playable card, often forgets UNO. |
+| Normal | A family player | Saves wilds, names the color it holds most of, attacks someone about to win, usually calls UNO. |
+| Hard | An experienced player | Plans its next turn, saves Skips and Draws for when they hurt most, keeps a wild to finish on, switches to colors the next player is out of, challenges only when it pays. |
+| Expert | A card counter | All of that, plus it remembers every card played and the colors opponents named, and thinks a few turns ahead by imagining how the game could go from each move. In Flip it reads everyone's card backs before flipping. |
+
+In 4-player games with one bot of each level, they win roughly 10% / 24% / 30% / 35% of games
+(Easy / Normal / Hard / Expert), and each level beats the one below it head to head.
+
 ## House rules
 
 The host can switch these on in the lobby (or on the setup screen for bot games):

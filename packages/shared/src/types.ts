@@ -129,7 +129,7 @@ export interface GameState {
    */
   pendingDraw: number;
   /** The last Wild +4, while it can still be challenged: who played it and whether it broke the rule. */
-  wild4Check: { seat: number; illegal: boolean } | null;
+  wild4Check: { seat: number; illegal: boolean; colorBefore: Color } | null;
   dealer: number;
   roundWinner: number | null;
   gameWinner: number | null;
@@ -139,6 +139,13 @@ export interface GameState {
   history: RoundResult[];
   /** UNO Flip: which side of the cards is in play. */
   side?: Side;
+  /**
+   * What anyone at the table could have noticed: per player, colors they drew on instead of
+   * playing (so they probably have none). Bots use it; it never reveals hidden cards.
+   */
+  voids: Color[][];
+  /** Per player, the color they last named with a wild (so they probably hold it). */
+  named: (Color | null)[];
   /** Seeded RNG state so games are reproducible. */
   rng: number;
 }

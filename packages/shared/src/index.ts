@@ -13,7 +13,7 @@ export { classic } from './variants/classic/index.js';
 export { flip } from './variants/flip/index.js';
 export { buildFlipDecks, flipPoints } from './variants/flip/deck.js';
 export { deckFor } from './variants/decks.js';
-export { BOT_CATCH_CHANCE, BOT_JUMP_IN_CHANCE } from './variants/classic/bot.js';
+export { BOT_CATCH_CHANCE, BOT_JUMP_IN_CHANCE, BOT_LEVELS, BOT_REACTION } from './variants/classic/bot.js';
 export { buildClassicDeck, cardPoints } from './variants/classic/deck.js';
 export { canPlayOn, playableIdsFromView } from './variants/classic/rules.js';
 

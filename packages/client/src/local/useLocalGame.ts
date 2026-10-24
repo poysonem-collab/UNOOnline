@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BOT_CATCH_CHANCE,
   BOT_JUMP_IN_CHANCE,
+  BOT_REACTION,
   playableIdsFromView,
   BOT_NAMES,
   describeEvent,
@@ -100,7 +101,7 @@ export function useLocalGame(config: LocalGameConfig) {
     const catcher = catchers[Math.floor(Math.random() * catchers.length)]!;
     const timer = setTimeout(() => {
       if (stateRef.current.unoVulnerable === target) act(catcher, { type: 'catchUno', target });
-    }, randomBetween(1000, 1700));
+    }, randomBetween(1000, 1700) * BOT_REACTION[config.difficulty]);
     return () => clearTimeout(timer);
   }, [state.unoVulnerable, act, config.difficulty]);
 
@@ -119,7 +120,7 @@ export function useLocalGame(config: LocalGameConfig) {
       for (const action of variant.chooseBotJumpIn(state, seat, config.difficulty, Math.random) ?? []) {
         if (act(seat, action)) break;
       }
-    }, randomBetween(500, 1300));
+    }, randomBetween(500, 1300) * BOT_REACTION[config.difficulty]);
     return () => clearTimeout(timer);
   }, [state, act, variant, config.difficulty]);
 

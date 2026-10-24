@@ -49,6 +49,8 @@ export function makeState(opts: {
     scores: opts.hands.map(() => 0),
     round: 1,
     history: [],
+    voids: opts.hands.map(() => []),
+    named: opts.hands.map(() => null),
     rng: 42,
   };
 }

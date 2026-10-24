@@ -50,6 +50,8 @@ export function createGame(players: PlayerInfo[], rules: RuleSet, seed: number, 
     scores: players.map(() => 0),
     round: 1,
     history: [],
+    voids: players.map(() => []),
+    named: players.map(() => null),
     rng: seed >>> 0,
   };
   dealRound(state, []);
@@ -210,9 +212,13 @@ function play(
   const wild4Illegal = isWildDraw(last) && player.hand.some((c) => !cards.includes(c) && c.color === state.currentColor);
 
   // The play is legal: carry it out.
+  const colorBefore = state.currentColor;
   state.unoVulnerable = null;
   player.hand = player.hand.filter((c) => !cards.includes(c));
   state.discardPile.push(...cards);
+  for (const c of cards) if (c.color !== 'wild') state.voids[seat] = state.voids[seat]!.filter((v) => v !== c.color);
+  // Naming a color with a wild tells everyone you probably hold it.
+  if (last.color === 'wild') state.named[seat] = chosenColor!;
   state.currentColor = last.color === 'wild' ? chosenColor! : last.color;
   state.phase = 'playing';
   state.drawnCardId = null;
@@ -224,7 +230,7 @@ function play(
 
   // An UNO call only counts for the play that brings you down to one card.
   if (player.hand.length > 1) player.calledUno = false;
-  const handsMoved = applyEffect(state, seat, last, { swapWith, wild4Illegal }, events);
+  const handsMoved = applyEffect(state, seat, last, { swapWith, wild4Illegal, colorBefore }, events);
   if (!handsMoved && player.hand.length === 1 && !player.calledUno) state.unoVulnerable = seat;
   if (player.hand.length === 0) endRound(state, seat, events);
   return null;
@@ -238,7 +244,7 @@ function applyEffect(
   state: GameState,
   seat: number,
   card: Card,
-  extra: { swapWith?: number; wild4Illegal: boolean },
+  extra: { swapWith?: number; wild4Illegal: boolean; colorBefore: Color },
   events: GameEvent[],
 ): boolean {
   const { rules } = state;
@@ -279,7 +285,7 @@ function applyEffect(
       if (responds) {
         // The next player can stack, challenge, or take the cards.
         state.pendingDraw += amount;
-        state.wild4Check = isWildDraw(card) ? { seat, illegal: extra.wild4Illegal } : null;
+        state.wild4Check = isWildDraw(card) ? { seat, illegal: extra.wild4Illegal, colorBefore: extra.colorBefore } : null;
         state.currentPlayer = next;
         events.push({ type: 'drawStacked', total: state.pendingDraw, next });
       } else {
@@ -332,6 +338,9 @@ function flipEverything(state: GameState, seat: number, events: GameEvent[]): vo
   state.drawPile = state.drawPile.map(turnOver);
   state.discardPile = state.discardPile.map(turnOver);
   state.side = state.side === 'dark' ? 'light' : 'dark';
+  // Every face changed, so nothing noticed about colors still holds.
+  state.voids = state.players.map(() => []);
+  state.named = state.players.map(() => null);
   events.push({ type: 'flipped', seat, side: state.side });
 
   const top = topCard(state);
@@ -355,10 +364,16 @@ function chooseColor(state: GameState, seat: number, color: Color, events: GameE
   return null;
 }
 
+function noteVoid(state: GameState, seat: number, color: Color): void {
+  if (!state.voids[seat]!.includes(color)) state.voids[seat]!.push(color);
+}
+
 function swapHands(state: GameState, a: number, b: number): void {
   const pa = state.players[a]!;
   const pb = state.players[b]!;
   [pa.hand, pb.hand] = [pb.hand, pa.hand];
+  [state.voids[a], state.voids[b]] = [state.voids[b]!, state.voids[a]!];
+  [state.named[a], state.named[b]] = [state.named[b]!, state.named[a]!];
   pa.calledUno = false;
   pb.calledUno = false;
 }
@@ -366,10 +381,13 @@ function swapHands(state: GameState, a: number, b: number): void {
 /** Every hand moves one seat along in the direction of play. */
 function rotateHands(state: GameState): void {
   const hands = state.players.map((p) => p.hand);
+  const { voids, named } = state;
   state.players.forEach((p, i) => {
     p.hand = hands[seatAfter(state, i, -1)]!;
     p.calledUno = false;
   });
+  state.voids = state.players.map((_, i) => voids[seatAfter(state, i, -1)]!);
+  state.named = state.players.map((_, i) => named[seatAfter(state, i, -1)]!);
 }
 
 function draw(state: GameState, seat: number, events: GameEvent[]): string | null {
@@ -377,6 +395,9 @@ function draw(state: GameState, seat: number, events: GameEvent[]): string | nul
   if (state.phase === 'chooseColor') return 'Choose a color first';
   if (state.phase !== 'playing') return 'You already drew this turn';
   state.unoVulnerable = null;
+
+  // Drawing instead of playing tells everyone you're probably out of this color.
+  if (state.pendingDraw === 0) noteVoid(state, seat, state.currentColor);
 
   // Taking the stacked penalty ends your turn.
   if (state.pendingDraw > 0) {
@@ -486,6 +507,8 @@ function giveCards(state: GameState, seat: number, cards: Card[], events: GameEv
   if (cards.length === 0) return;
   const player = state.players[seat]!;
   player.hand.push(...cards);
+  // A handful of new cards means what we noticed about this player may no longer hold.
+  if (cards.length >= 2) state.voids[seat] = [];
   player.calledUno = false;
   events.push({ type: 'drew', seat, count: cards.length });
 }
@@ -543,6 +566,8 @@ function dealRound(state: GameState, events: GameEvent[]): void {
   state.pendingDraw = 0;
   state.wild4Check = null;
   state.roundWinner = null;
+  state.voids = state.players.map(() => []);
+  state.named = state.players.map(() => null);
   for (const p of state.players) {
     p.hand = [];
     p.calledUno = false;

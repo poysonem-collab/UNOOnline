@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { MAX_PLAYERS, MIN_PLAYERS, playableIdsFromView, VARIANT_CATALOG, type BotDifficulty, type JoinedRoom } from '@uno/shared';
 import { GameTable, type EndAction } from '../components/GameTable';
-import { RulesPanel, Segmented } from '../components/RulesPanel';
+import { BOT_SKILL_LABELS, BotSkill } from '../components/BotSkill';
+import { RulesPanel } from '../components/RulesPanel';
 import { inviteLink, setRoomInUrl } from '../net/session';
 import { useRoom, type OnlineGame, type Room } from '../online/useRoom';
 
@@ -143,7 +144,7 @@ function LobbyView({ room, onLeave }: { room: Room; onLeave: () => void }) {
               <span className="seat__tags">
                 {seat.id === lobby.hostId && <span className="tag tag--host">👑 Host</span>}
                 {seat.id === room.playerId && <span className="tag">You</span>}
-                {seat.isBot && <span className="tag">Bot · {seat.difficulty === 'easy' ? 'Easy' : 'Normal'}</span>}
+                {seat.isBot && <span className="tag">Bot · {BOT_SKILL_LABELS[seat.difficulty ?? 'normal']}</span>}
                 {!seat.connected && <span className="tag tag--away">Reconnecting…</span>}
               </span>
               {isHost && seat.id !== room.playerId && (
@@ -162,9 +163,9 @@ function LobbyView({ room, onLeave }: { room: Room; onLeave: () => void }) {
 
         {isHost && (
           <div className="add-bot">
-            <Segmented value={botDifficulty} options={[['easy', 'Easy'], ['normal', 'Normal']]} onChange={setBotDifficulty} />
+            <BotSkill value={botDifficulty} onChange={setBotDifficulty} label="New bot's skill" />
             <button type="button" className="btn" onClick={() => run(room.addBot(botDifficulty))} disabled={full}>
-              + Add bot
+              + Add {BOT_SKILL_LABELS[botDifficulty]} bot
             </button>
           </div>
         )}
