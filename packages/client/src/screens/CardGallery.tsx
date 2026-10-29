@@ -1,11 +1,11 @@
-import { buildAllWildDecks, buildClassicDeck, buildFlipDecks, buildNoMercyDecks, GIANT_CUSTOM_WILDS, type CardFace } from '@uno/shared';
+import { buildAllWildDecks, buildClassicDeck, buildFlexDecks, buildFlipDecks, buildNoMercyDecks, GIANT_CUSTOM_WILDS, type CardFace } from '@uno/shared';
 import { Card, CardBack, CardThemeContext, CustomWildsContext, type CardTheme } from '../components/Card';
 
 /** One of each distinct card face. */
 function unique(faces: CardFace[]): CardFace[] {
   const seen = new Set<string>();
   return faces.filter((face) => {
-    const key = `${face.color}-${face.value}-${face.dark ? 'd' : 'l'}`;
+    const key = `${face.color}-${face.value}-${face.dark ? 'd' : 'l'}-${face.flex ?? ''}-${face.flip ? 'f' : ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -21,6 +21,7 @@ export function CardGallery() {
     ['UNO Flip: dark side', unique(flipDeck.map((c) => c.other!)), 'classic'],
     ['UNO Show ’Em No Mercy (with the Expansion Pack)', unique(buildNoMercyDecks(1, true)), 'nomercy'],
     ['UNO All Wild', unique(buildAllWildDecks(1)), 'allwild'],
+    ['UNO Flex', unique(buildFlexDecks(1)).filter((c) => c.color === 'red' || c.color === 'wild'), 'classic'],
     ['Giant UNO: blank wilds (what the host wrote, or what they do)', [
       { color: 'wild', value: 'custom1' }, { color: 'wild', value: 'custom2' },
     ], 'classic'],

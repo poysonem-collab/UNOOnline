@@ -109,6 +109,7 @@ export function parseAction(input: unknown): Action | null {
       if (raw.color !== undefined) action.color = raw.color as Color;
       if (swapWith !== undefined) action.swapWith = swapWith as number | number[];
       if (target !== undefined) action.target = target as number;
+      if (raw.flex === true) action.flex = true;
       if (raw.discardColor !== undefined) {
         if (!ALL_COLORS.includes(raw.discardColor as Color)) return null;
         action.discardColor = raw.discardColor as Color;

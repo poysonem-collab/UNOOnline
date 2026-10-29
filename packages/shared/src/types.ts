@@ -43,14 +43,25 @@ export type WildValue =
   | 'wildSkip2'
   | 'wildReverse'
   | 'wildTarget2'
-  | 'wildSwap';
+  | 'wildSwap'
+  // UNO Flex
+  | 'wildAllFlip';
 export type CardValue = NumberValue | ActionValue | WildValue;
 
 /** One printed face of a card. `dark` marks UNO Flip's dark side (it changes how wilds look). */
+/** UNO Flex: what a Flex Wild does on its flex side (you pick who draws 2, everyone draws 2, you pick who draws 4). */
+export type WildFlex = 'target2' | 'all2' | 'target4';
+
 export type CardFace = (
   | { color: Color; value: NumberValue | ActionValue }
   | { color: 'wild'; value: WildValue }
-) & { dark?: boolean };
+) & {
+  dark?: boolean;
+  /** UNO Flex: the card's flex side, played while your Power Card is green: a second color, or a Flex Wild's power. */
+  flex?: Color | WildFlex;
+  /** UNO Flex: the flip symbol, which turns your Power Card back to green when you play the card. */
+  flip?: boolean;
+};
 
 /**
  * A card, showing its face in play. UNO Flip cards also carry `other`: the face on
@@ -189,6 +200,8 @@ export interface GameState {
   out: boolean[];
   /** No Mercy: points of the hands knocked out this round, which go to the round's winner. */
   mercyPoints?: number;
+  /** UNO Flex: whose Power Card is green (can flex). */
+  power?: boolean[];
   /** Seeded RNG state so games are reproducible. */
   rng: number;
 }
@@ -202,7 +215,16 @@ export interface RoundResult {
 export type Action =
   /** With several cards (same-number stacking) the first must be playable; the last decides the color. */
   /** `swapWith` names one player per 7 when several 7s are played together (7-0). */
-  | { type: 'play'; cardIds: string[]; color?: Color; swapWith?: number | number[]; discardColor?: Color; target?: number }
+  | {
+      type: 'play';
+      cardIds: string[];
+      color?: Color;
+      swapWith?: number | number[];
+      discardColor?: Color;
+      target?: number;
+      /** UNO Flex: play the card's flex side (needs a green Power Card). */
+      flex?: boolean;
+    }
   /** Takes one card, or the pending penalty when one is waiting. */
   | { type: 'draw' }
   | { type: 'pass' }
@@ -235,6 +257,11 @@ export type GameEvent =
   | { type: 'shuffledHands'; seat: number }
   | { type: 'everyoneDrew'; seat: number; count: number }
   | { type: 'targeted'; seat: number; target: number; count: number }
+  /** UNO Flex: Power Cards turning over. */
+  | { type: 'flexed'; seat: number }
+  | { type: 'powerRestored'; seat: number }
+  | { type: 'allFlipped'; seat: number }
+  | { type: 'powerReset' }
   | { type: 'discardedAll'; seat: number; color: Color; count: number }
   | { type: 'roulette'; seat: number; color: Color; count: number }
   | { type: 'eliminated'; seat: number }
@@ -257,6 +284,8 @@ export interface PlayerView {
     out: boolean;
     /** UNO Flip: the backs of this player's cards, which you can see (not for your own hand). */
     otherSides?: CardFace[];
+    /** UNO Flex: whether their Power Card is green (they can flex). */
+    power?: boolean;
   })[];
   topCard: Card;
   /** UNO Flip: which side is in play (null in games without sides). */

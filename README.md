@@ -34,6 +34,15 @@ takes up to a minute.
   - Points games play to 1,000 (numbers face value, colored action cards 20, wilds 50).
   - **Expansion Pack** (optional host rule): adds 10s (play again), Wild Discard All (pick a color to
     throw away, then the color in play) and Wild Reverse Draw 8. The pack's coins aren't included yet.
+- **UNO Flex**: Flex cards have a second side. Everyone has a Power Card; while yours is green you
+  can play a card's flex side, which turns it red:
+  - A Flex number card can be played as its second color (the color in play stays the same).
+  - Flex Draw Two: everyone else draws 1. Flex Skip: you go again. Flex Reverse: reverse and skip.
+  - Flex Wilds: pick who draws 2, or everyone else draws 2. Flex Wild Draw Four: pick who draws 4.
+  - Your Power Card turns green again when you play a number card with the flip symbol, when anyone
+    plays a Wild All Flip (it turns everyone's over), or once everyone's is red.
+  - 104 cards: per color 1-8 twice (one regular, one Flex) and a regular and a Flex Draw Two, Skip
+    and Reverse; plus 8 Flex Wilds, 2 Flex Wild Draw Fours and 6 Wild All Flips. No 0s or 9s.
 - **UNO All Wild**: every card is wild, so any card goes on any card and nobody picks a color.
   112 cards: 54 Wild, 10 Wild Draw Two, 6 Wild Draw Four, 14 Wild Skip, 6 Wild Skip Two, 14 Wild
   Reverse, 4 Wild Targeted Draw Two (you pick who draws 2; they keep their turn) and 4 Wild Forced
@@ -170,5 +179,7 @@ That server must list the Pages address in its `CORS_ORIGINS` setting (see `rend
 - [x] Giant UNO
 - [x] Easier-to-read table (piles fit the screen, status panel, compact phone layout)
 - [x] UNO All Wild
+- [x] Stacking identical action cards (each one counts)
+- [x] UNO Flex
 
 UNO is a trademark of Mattel. This is an unofficial fan project; the card art is drawn from scratch.

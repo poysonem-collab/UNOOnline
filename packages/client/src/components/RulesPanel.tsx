@@ -51,6 +51,11 @@ const FLIP_RULES: Partial<Record<HouseRule, { label: string; hint: string }>> = 
   challengeWild4: { label: 'Challenge Wild Draw Two', hint: 'A Wild Draw Two is only allowed with no card of the current color. Challenge it: a bluffer draws the cards, otherwise you draw 2 extra.' },
 };
 
+/** UNO Flex wording for the rules that differ. */
+const FLEX_RULES: Partial<Record<HouseRule, { label: string; hint: string }>> = {
+  sevenZero: { label: 'Sevens swap', hint: 'Playing a 7 swaps hands with a player you choose. (UNO Flex has no 0s.)' },
+};
+
 /** UNO Show 'Em No Mercy wording for the rules that differ. */
 const NO_MERCY_RULES: Partial<Record<HouseRule, { label: string; hint: string }>> = {
   stackSameNumber: {
@@ -62,7 +67,7 @@ const NO_MERCY_RULES: Partial<Record<HouseRule, { label: string; hint: string }>
 export function RulesPanel({ variantId = 'classic', rules, onChange, playerCount, online, readOnly }: RulesPanelProps) {
   // Some games build rules in (No Mercy always stacks, for one), so the host can't change those.
   const offered = getVariant(variantId).availableRules;
-  const wording = variantId === 'flip' ? FLIP_RULES : variantId === 'no-mercy' ? NO_MERCY_RULES : {};
+  const wording = variantId === 'flip' ? FLIP_RULES : variantId === 'no-mercy' ? NO_MERCY_RULES : variantId === 'flex' ? FLEX_RULES : {};
   const houseRules = HOUSE_RULES.filter((r) => offered.includes(r.key)).map((r) => ({ ...r, ...wording[r.key] }));
   const set = <K extends keyof RuleSet>(key: K, value: RuleSet[K]) => onChange({ ...rules, [key]: value });
   const twoDecksRequired = needsTwoDecks(playerCount, rules.handSize, variantId);

@@ -28,6 +28,13 @@ export function Opponent({ player, isTurn, canCatch, score, mercyLimit = null, a
       <div className="opponent__top">
         <span className="opponent__avatar" aria-hidden>{player.isBot ? '🤖' : player.name[0]?.toUpperCase()}</span>
         <span className="opponent__name">{player.name}</span>
+        {player.power !== undefined && (
+          <span
+            className={`power-dot ${player.power ? 'power-dot--on' : 'power-dot--off'}`}
+            title={player.power ? 'Power Card green: can flex' : 'Power Card red: no flexing'}
+            aria-label={player.power ? 'Can flex' : 'Flex used'}
+          />
+        )}
       </div>
       <div className="opponent__cards" aria-label={`${player.handCount} cards`}>
         <div className={`opponent__fan ${player.otherSides ? 'opponent__fan--faces' : ''}`} style={{ ['--n' as string]: fan }}>

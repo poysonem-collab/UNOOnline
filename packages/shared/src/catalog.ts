@@ -22,8 +22,8 @@ export const VARIANT_CATALOG: VariantListing[] = [
   {
     id: 'flex',
     name: 'UNO Flex',
-    description: 'Flex cards change their power depending on the color in play.',
-    locked: true,
+    description: 'Flex cards have a second side: a second color or a stronger power, while your Power Card is green.',
+    locked: false,
   },
   {
     id: 'flip',

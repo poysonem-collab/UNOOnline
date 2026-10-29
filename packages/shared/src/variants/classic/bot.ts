@@ -4,7 +4,8 @@ import type { BotDifficulty } from '../Variant.js';
 import { canChallenge } from './engine.js';
 import { customWildFor } from '../giant/customWilds.js';
 import { lookaheadSupported, rateCandidates, searchFor, type Candidate } from './lookahead.js';
-import { canStackTogether, drawAmount, isWildDraw, jumpInCards, playableCards, seatAfter } from './rules.js';
+import { flexNeedsTarget, flexSide } from '../flex/flex.js';
+import { canStackTogether, drawAmount, flexableCards, isWildDraw, jumpInCards, playableCards, seatAfter } from './rules.js';
 
 /**
  * Bots at four levels, modelled on how real people play UNO:
@@ -79,13 +80,24 @@ export function chooseBotMove(
   if (state.phase === 'roulette') return [{ type: 'chooseColor', color: rouletteColor(k, difficulty, random) }];
 
   const playable = playableCards(state, seat);
+  const flexable = flexableCards(state, seat);
   const takeOrDraw: Action = state.phase === 'playDrawn' ? { type: 'pass' } : { type: 'draw' };
 
   if (playable.length === 0) {
     if (state.pendingDraw > 0 && canChallenge(state) && shouldChallenge(state, k, difficulty, random)) {
       return [{ type: 'challenge' }];
     }
+    // UNO Flex: nothing to play, but a flex side fits (a casual player doesn't always spot it).
+    if (flexable.length && (difficulty !== 'easy' || random() < 0.6)) {
+      return flexPlay(state, k, pickFlex(flexable, difficulty, random), difficulty, random);
+    }
     return [takeOrDraw];
+  }
+
+  // UNO Flex: strong players save their Power Card for a move that really hurts.
+  if ((difficulty === 'hard' || difficulty === 'expert') && flexable.length) {
+    const strong = strongFlex(k, flexable);
+    if (strong) return flexPlay(state, k, strong, difficulty, random);
   }
 
   // Human slips: not noticing a playable card, keeping a drawn one, or forgetting to stack back
@@ -108,6 +120,52 @@ export function chooseBotMove(
   }
   const action = playAction(state, k, cards, difficulty, random);
   return withUnoCall(state, seat, handAfterPlay(k.hand, cards, action), profile, random, action);
+}
+
+/** UNO Flex: the flex card to play when nothing else fits (anyone but a casual player prefers an attack). */
+function pickFlex(flexable: Card[], level: BotDifficulty, random: () => number): Card {
+  if (level === 'easy') return pickRandom(flexable, random);
+  return flexable.find((c) => flexSide(c) !== 'match') ?? flexable[0]!;
+}
+
+/** UNO Flex: a flex play worth spending the Power Card on, if there is one. */
+function strongFlex(k: Knowledge, flexable: Card[]): Card | null {
+  const leader = minOther(k);
+  const nextSize = k.sizes[k.next]!;
+  const followUp = (card: Card) => k.hand.some((c) => c !== card && (c.color === 'wild' || c.color === card.flex));
+  return (
+    flexable.find((card) => {
+      switch (flexSide(card)) {
+        case 'target4':
+          return leader <= 3;
+        case 'target2':
+        case 'all2':
+        case 'allDraw1':
+          return leader <= 2;
+        case 'reverseSkip':
+          return nextSize <= 2 && k.sizes[k.prev]! > 2;
+        case 'playAgain':
+          return k.hand.length <= 4 && followUp(card);
+        default:
+          return false;
+      }
+    }) ?? null
+  );
+}
+
+/** Plays `card` on its flex side, with a color (for wilds) and a target if it needs them. */
+function flexPlay(state: GameState, k: Knowledge, card: Card, level: BotDifficulty, random: () => number): Action[] {
+  const action: Action = { type: 'play', cardIds: [card.id], flex: true };
+  const rest = k.hand.filter((c) => c !== card);
+  if (card.color === 'wild') action.color = chooseColor(k, rest, level, random);
+  if (flexNeedsTarget(flexSide(card))) action.target = fewestCardsOpponent(state, k, level, random);
+  return withUnoCall(state, k.seat, rest.length, PROFILES[level], random, action);
+}
+
+/** Whoever has fewest cards (a casual player just picks someone). */
+function fewestCardsOpponent(state: GameState, k: Knowledge, level: BotDifficulty, random: () => number): number {
+  const others = k.sizes.map((_, i) => i).filter((i) => i !== k.seat && !state.out[i]);
+  return level === 'easy' ? pickRandom(others, random) : others.reduce((a, b) => (k.sizes[b]! < k.sizes[a]! ? b : a));
 }
 
 /** Cards left after a play, counting the extra cards a Discard All throws away. */
@@ -498,8 +556,7 @@ function playAction(state: GameState, k: Knowledge, cards: Card[], level: BotDif
     action.color = chooseColor(k, k.hand.filter((c) => !cards.includes(c)), level, random);
   }
   // Swaps and Targeted Draw Two go to whoever has fewest cards (a casual player just picks someone).
-  const others = k.sizes.map((_, i) => i).filter((i) => i !== k.seat && !state.out[i]);
-  const pickTarget = () => (level === 'easy' ? pickRandom(others, random) : others.reduce((a, b) => (k.sizes[b]! < k.sizes[a]! ? b : a)));
+  const pickTarget = () => fewestCardsOpponent(state, k, level, random);
   const swaps =
     (state.rules.sevenZero && last.value === 7) || last.value === 'wildSwap' || customWildFor(state.rules, last.value)?.effect === 'swapHands';
   if (swaps && k.hand.length > cards.length) action.swapWith = pickTarget();

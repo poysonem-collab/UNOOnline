@@ -50,6 +50,11 @@ export function soundsFor(events: GameEvent[], you: number): SoundName[] {
       case 'everyoneDrew':
         sounds.push('penalty');
         break;
+      case 'flexed':
+      case 'allFlipped':
+      case 'powerReset':
+        sounds.push('swap');
+        break;
       case 'eliminated':
         sounds.push('catch');
         break;
@@ -78,6 +83,9 @@ export function burstFor(events: GameEvent[], you: number, names: string[]): Bur
   // Later events in a batch are usually the consequence, so check the most dramatic first.
   for (const e of events) {
     if (e.type === 'flipped') return { text: e.side === 'dark' ? 'FLIP! Dark side' : 'FLIP! Light side', kind: 'flip' };
+    if (e.type === 'flexed') return { text: `${name(e.seat)} ${e.seat === you ? 'flex' : 'flexes'}!`, kind: 'flip' };
+    if (e.type === 'allFlipped') return { text: 'All flip!', kind: 'flip' };
+    if (e.type === 'powerReset') return { text: 'Power Cards reset!', kind: 'good' };
     if (e.type === 'eliminated') return { text: `${name(e.seat)} ${e.seat === you ? 'are' : 'is'} out!`, kind: 'penalty' };
     if (e.type === 'roulette') return { text: `${name(e.seat)} drew ${e.count}!`, kind: 'penalty' };
     if (e.type === 'skippedEveryone') return { text: 'Skip everyone!', kind: 'action' };

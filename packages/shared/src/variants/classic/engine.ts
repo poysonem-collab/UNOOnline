@@ -17,7 +17,8 @@ import {
 } from '../../types.js';
 import { deckFor } from '../decks.js';
 import { customWildFor } from '../giant/customWilds.js';
-import { activeSeats, canJumpIn, canPlay, canStackTogether, contextOf, drawAmount, isPlayable, isWildDraw, seatAfter, topCard } from './rules.js';
+import { flexNeedsTarget, flexSide, type FlexSide } from '../flex/flex.js';
+import { activeSeats, canFlex, canJumpIn, canPlay, canStackTogether, contextOf, drawAmount, isPlayable, isWildDraw, seatAfter, topCard } from './rules.js';
 
 // This engine runs classic UNO, UNO Flip and UNO Show 'Em No Mercy; the deck config
 // (see ../decks.ts) holds the differences.
@@ -98,6 +99,7 @@ export function getPlayerView(state: GameState, seat: number): PlayerView {
       handCount: p.hand.length,
       calledUno: p.calledUno,
       out: state.out[i]!,
+      ...(state.power ? { power: state.power[i]! } : {}),
       // ...but everyone else's backs face you.
       ...(twoSided && i !== seat ? { otherSides: p.hand.map((c) => c.other!) } : {}),
     })),
@@ -159,7 +161,14 @@ function dispatch(state: GameState, seat: number, action: Action, events: GameEv
 function play(
   state: GameState,
   seat: number,
-  { cardIds, color: chosenColor, swapWith, discardColor, target }: { cardIds: string[]; color?: Color; swapWith?: number | number[]; discardColor?: Color; target?: number },
+  {
+    cardIds,
+    color: chosenColor,
+    swapWith,
+    discardColor,
+    target,
+    flex: flexing = false,
+  }: { cardIds: string[]; color?: Color; swapWith?: number | number[]; discardColor?: Color; target?: number; flex?: boolean },
   events: GameEvent[],
 ): string | null {
   const { rules } = state;
@@ -189,7 +198,18 @@ function play(
 
   const ctx = contextOf(state);
   const handAfter = player.hand.length - cards.length;
-  if (jumpingIn) {
+  // UNO Flex: playing a flex side instead of the card's usual side.
+  if (flexing) {
+    if (!state.power) return 'This game has no Flex cards';
+    if (jumpingIn) return 'You can only flex on your own turn';
+    if (cards.length > 1) return 'Flex one card at a time';
+    if (!first.flex) return 'That card has no flex side';
+    if (!state.power[seat]) return 'Your Power Card is red: no flexing until it turns green again';
+    if (state.phase === 'playDrawn' && first.id !== state.drawnCardId) return 'After drawing you may only play the drawn card';
+    if (!canFlex(first, ctx, true)) {
+      return state.pendingDraw > 0 ? `Stack a draw card or take ${state.pendingDraw} cards` : "That card's flex color doesn't match";
+    }
+  } else if (jumpingIn) {
     if (!canJumpIn(first, ctx, player.hand.length - cards.length + 1)) {
       return 'You can only jump in with a card identical to the top card';
     }
@@ -216,8 +236,10 @@ function play(
   const discardsColor = last.value === 'wildDiscardAll' || custom === 'discardColor';
   if (discardsColor && (!discardColor || !colorsForSide(state.side).includes(discardColor))) return 'Choose a color to discard';
 
-  const isOpponent = (other: number | undefined) => other !== undefined && other !== seat && !!state.players[other] && !state.out[other];
-  const swaps = ((rules.sevenZero && last.value === 7) || custom === 'swapHands' || last.value === 'wildSwap') && handAfter > 0;
+  const isOpponent = (other: number | undefined) => isOpponentSeat(state, seat, other);
+  const flexed = flexing ? flexSide(first) : null;
+  if (flexNeedsTarget(flexed) && !isOpponent(target)) return 'Choose who draws';
+  const swaps = !flexing && ((rules.sevenZero && last.value === 7) || custom === 'swapHands' || last.value === 'wildSwap') && handAfter > 0;
   // One swap per 7 played.
   const swapTargets = swapWith === undefined ? [] : Array.isArray(swapWith) ? swapWith : [swapWith];
   const swapCount = last.value === 7 ? cards.length : 1;
@@ -227,7 +249,7 @@ function play(
   if (last.value === 'wildTarget2' && !isOpponent(target)) return 'Choose who draws 2';
 
   // A +4 is only allowed with no card of the current color (checked if it can be challenged).
-  const wild4Illegal = isWildDraw(last) && player.hand.some((c) => !cards.includes(c) && c.color === state.currentColor);
+  const wild4Illegal = !flexing && isWildDraw(last) && player.hand.some((c) => !cards.includes(c) && c.color === state.currentColor);
 
   // The play is legal: carry it out.
   const colorBefore = state.currentColor;
@@ -237,7 +259,8 @@ function play(
   for (const c of cards) if (c.color !== 'wild') state.voids[seat] = state.voids[seat]!.filter((v) => v !== c.color);
   // Naming a color with a wild tells everyone you probably hold it.
   if (namesColor) state.named[seat] = chosenColor!;
-  if (last.color !== 'wild') state.currentColor = last.color;
+  // (A colored card played on its flex side leaves the color in play as it was.)
+  if (last.color !== 'wild' && !flexing) state.currentColor = last.color;
   else if (namesColor) state.currentColor = chosenColor!;
   state.phase = 'playing';
   state.drawnCardId = null;
@@ -247,7 +270,20 @@ function play(
   }
   events.push({ type: 'played', seat, cards, color: colorless ? null : state.currentColor });
 
-  const handsMoved = applyEffect(state, seat, cards, { swapWith: swapTargets, wild4Illegal, colorBefore, discardColor, target }, events);
+  let handsMoved = false;
+  if (flexed) {
+    state.power![seat] = false;
+    events.push({ type: 'flexed', seat });
+    flexEffect(state, seat, flexed, target, events);
+  } else {
+    handsMoved = applyEffect(state, seat, cards, { swapWith: swapTargets, wild4Illegal, colorBefore, discardColor, target }, events);
+    // UNO Flex: a flip symbol turns your Power Card back to green.
+    if (state.power && !state.power[seat] && cards.some((c) => c.flip)) {
+      state.power[seat] = true;
+      events.push({ type: 'powerRestored', seat });
+    }
+  }
+  resetPowerIfAllRed(state, events);
   // An UNO call only counts for the play that brings you down to one card (a Discard All may do that too).
   if (player.hand.length > 1) player.calledUno = false;
   if (!handsMoved && player.hand.length === 1 && !player.calledUno) state.unoVulnerable = seat;
@@ -353,6 +389,13 @@ function applyEffect(
       events.push({ type: 'swapped', seat, with: extra.swapWith[0]! });
       return true;
 
+    case 'wildAllFlip':
+      // UNO Flex: everyone's Power Card turns over.
+      state.currentPlayer = next;
+      for (const i of activeSeats(state)) state.power![i] = !state.power![i];
+      events.push({ type: 'allFlipped', seat });
+      return false;
+
     case 'custom1':
     case 'custom2':
       return customEffect(state, seat, customWildFor(rules, card.value)!.effect, { ...extra, swapWith: extra.swapWith[0] }, events);
@@ -403,6 +446,56 @@ function applyEffect(
       state.currentPlayer = next;
       return false;
   }
+}
+
+function isOpponentSeat(state: GameState, seat: number, other: number | undefined): boolean {
+  return other !== undefined && other !== seat && !!state.players[other] && !state.out[other];
+}
+
+/** UNO Flex: what a card does on its flex side. */
+function flexEffect(state: GameState, seat: number, side: FlexSide, target: number | undefined, events: GameEvent[]): void {
+  const next = seatAfter(state, seat);
+  const others = activeSeats(state).filter((i) => i !== seat);
+  state.currentPlayer = next;
+  switch (side) {
+    case 'allDraw1':
+    case 'all2': {
+      const count = side === 'all2' ? 2 : 1;
+      events.push({ type: 'everyoneDrew', seat, count });
+      for (const other of others) drawCards(state, other, count, events);
+      return;
+    }
+    case 'playAgain':
+      events.push({ type: 'playAgain', seat });
+      state.currentPlayer = seat;
+      return;
+    case 'reverseSkip':
+      state.direction = state.direction === 1 ? -1 : 1;
+      events.push({ type: 'reversed', direction: state.direction });
+      skipPlayers(state, seat, 1, events);
+      return;
+    case 'target2':
+    case 'target4': {
+      // The player you pick draws; a +4 aimed at the next player also costs them their turn.
+      const count = side === 'target4' ? 4 : 2;
+      events.push({ type: 'targeted', seat, target: target!, count });
+      drawCards(state, target!, count, events);
+      if (side === 'target4' && target === next) {
+        events.push({ type: 'skipped', seat: next });
+        state.currentPlayer = seatAfter(state, seat, 2);
+      }
+      return;
+    }
+    case 'match':
+      return;
+  }
+}
+
+/** UNO Flex: once every Power Card is red, they all turn back to green. */
+function resetPowerIfAllRed(state: GameState, events: GameEvent[]): void {
+  if (!state.power || activeSeats(state).some((i) => state.power![i])) return;
+  state.power = state.power.map(() => true);
+  events.push({ type: 'powerReset' });
 }
 
 /** Throws away every card of `color` from a hand, under the card just played (which stays on top). */
@@ -802,6 +895,8 @@ function dealRound(state: GameState, events: GameEvent[]): void {
   state.voids = state.players.map(() => []);
   state.named = state.players.map(() => null);
   state.out = state.players.map(() => false);
+  // UNO Flex: everyone starts each round with their Power Card green.
+  if (config.flexPower) state.power = state.players.map(() => true);
   state.mercyPoints = 0;
   for (const p of state.players) {
     p.hand = [];

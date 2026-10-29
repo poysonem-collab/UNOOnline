@@ -1,4 +1,5 @@
 import type { CardFace, Color, GameEvent, PlayerInfo, RuleSet } from './types.js';
+import { FLEX_SIDE_INFO, flexSide } from './variants/flex/flex.js';
 import { customWildFor, customWildTitle } from './variants/giant/customWilds.js';
 
 const VALUE_NAMES: Record<string, string> = {
@@ -26,6 +27,7 @@ const VALUE_NAMES: Record<string, string> = {
   wildReverse: 'Wild Reverse',
   wildTarget2: 'Wild Targeted Draw Two',
   wildSwap: 'Wild Forced Swap',
+  wildAllFlip: 'Wild All Flip',
 };
 
 export function colorName(color: Color): string {
@@ -43,7 +45,14 @@ export function describeCard(card: CardFace, rules?: Pick<RuleSet, 'customWilds'
   if (custom) return `Wild: ${customWildTitle(custom)}`;
   if (card.value === 'custom1' || card.value === 'custom2') return 'Blank Wild';
   const value = VALUE_NAMES[String(card.value)] ?? String(card.value);
-  return card.color === 'wild' ? value : `${colorName(card.color)} ${value}`;
+  const name = card.color === 'wild' ? value : `${colorName(card.color)} ${value}`;
+  // UNO Flex: say what the flex side is.
+  const side = flexSide(card);
+  if (!side) return name;
+  const power = FLEX_SIDE_INFO[side].label.toLowerCase();
+  if (card.color === 'wild') return `${name} (Flex: ${power})`;
+  const flexColor = colorName(card.flex as Color);
+  return side === 'match' ? `${name} (Flex ${flexColor})` : `${name} (Flex ${flexColor}: ${power})`;
 }
 
 /** A short log line for an event, or null for events not worth showing. */
@@ -89,6 +98,14 @@ export function describeEvent(event: GameEvent, players: PlayerInfo[], you: numb
       return `${name(event.seat)} skipped everyone and goes again`;
     case 'shuffledHands':
       return "Everyone's hands were shuffled together and dealt back out";
+    case 'flexed':
+      return `${name(event.seat)} flexed! (Power Card now red)`;
+    case 'powerRestored':
+      return `${name(event.seat)} played a flip symbol: Power Card green again`;
+    case 'allFlipped':
+      return `${name(event.seat)} played Wild All Flip: everyone's Power Card turned over`;
+    case 'powerReset':
+      return "Everyone's Power Card was red, so they're all green again";
     case 'targeted':
       return `${name(event.seat)} made ${event.target === you ? 'you' : name(event.target)} draw ${event.count}`;
     case 'everyoneDrew':

@@ -5,6 +5,9 @@ import {
   colorsForSide,
   customWildFor,
   describeCard,
+  flexableIdsFromView,
+  flexNeedsTarget,
+  flexSide,
   valueName,
   type Action,
   type Card as CardData,
@@ -19,6 +22,7 @@ import { Opponent } from './Opponent';
 import { RevealedHands, ScoreboardModal, Standings } from './Scoreboard';
 import { SwapPicker } from './SwapPicker';
 import { ThemePicker } from './ThemePicker';
+import { FlexChoice } from './FlexChoice';
 import { burstFor, soundsFor, type Burst, type EventBatch } from '../effects/eventEffects';
 import { playSound, playSounds } from '../effects/sound';
 import { useMuted } from '../effects/useMuted';
@@ -91,7 +95,7 @@ function sortHand(hand: CardData[]): CardData[] {
 }
 
 /** Choices a play can need on top of the cards themselves. */
-type PlayChoices = { color?: Color; swapWith?: number[]; discardColor?: Color; target?: number };
+type PlayChoices = { color?: Color; swapWith?: number[]; discardColor?: Color; target?: number; flex?: boolean };
 
 /** Small stable tilt per card so the discard pile looks hand-thrown. */
 function tilt(id: string): number {
@@ -117,6 +121,8 @@ export function GameTable({
   const [burst, setBurst] = useState<(Burst & { key: number }) | null>(null);
   const [showScores, setShowScores] = useState(false);
   const [showThemes, setShowThemes] = useState(false);
+  /** UNO Flex: a card waiting on "play it normally, or flex it?". */
+  const [flexChoice, setFlexChoice] = useState<CardData | null>(null);
   const [muted, setMuted] = useMuted();
   const drawPileRef = useRef<HTMLButtonElement>(null);
   const discardRef = useRef<HTMLDivElement>(null);
@@ -252,6 +258,14 @@ export function GameTable({
     const last = cardById(cardIds[cardIds.length - 1]!);
     const custom = customWildFor(view.rules, last.value)?.effect;
     const ask = (kind: 'color' | 'discard' | 'swap' | 'target') => setPicker({ kind, cardIds, choices });
+    // UNO Flex: a flex side may need a color (Flex Wilds) and someone to draw.
+    if (choices.flex) {
+      if (last.color === 'wild' && !choices.color) return ask('color');
+      if (flexNeedsTarget(flexSide(last)) && choices.target === undefined) return ask('target');
+      setPicker(null);
+      run({ type: 'play', cardIds, ...choices, swapWith: undefined });
+      return;
+    }
     // Wild Discard All asks which color to throw away first, then the color in play.
     if ((last.value === 'wildDiscardAll' || custom === 'discardColor') && !choices.discardColor) return ask('discard');
     if (last.color === 'wild' && last.value !== 'roulette' && !colorless && !choices.color) return ask('color');
@@ -276,13 +290,20 @@ export function GameTable({
       }
       return;
     }
-    if (!playableIds.has(card.id)) return;
+    const normal = playableIds.has(card.id);
+    // UNO Flex: offer the flex side when it does something the normal side doesn't.
+    if (flexableIds.has(card.id) && (!normal || flexSide(card) !== 'match')) {
+      setFlexChoice(card);
+      return;
+    }
+    if (!normal) return;
     // With same-number stacking, holding more of this number (or action) starts a selection.
     const more = view.rules.stackSameNumber && canStackTogether(card.value) && view.hand.some((c) => c.id !== card.id && c.value === card.value);
     if (more) setSelection([card.id]);
     else submitPlay([card.id]);
   };
 
+  const flexableIds = useMemo(() => flexableIdsFromView(view), [view]);
   const pending = view.pendingDraw;
   // No Mercy: a Discard All can take you from many cards to one, so you call UNO before playing it.
   const discardLeavesOne = view.hand.some((c) => {
@@ -306,6 +327,7 @@ export function GameTable({
     : yourTurn && pending > 0 && view.canChallenge && playableIds.size === 0 ? `+${pending} on you! Take the cards or challenge the +4`
     : yourTurn && pending > 0 && playableIds.size === 0 ? `Take ${pending} cards`
     : yourTurn && pending > 0 ? `Stack a draw card to pass it on, or take ${pending} cards`
+    : yourTurn && playableIds.size === 0 && flexableIds.size > 0 ? 'Nothing matches, but you can flex a card (or draw)'
     : yourTurn && view.phase === 'playDrawn' ? 'Play the card you drew, or keep it'
     : yourTurn ? 'Your turn: play a card or draw'
     : awayIds?.has(current.id) ? `Waiting for ${current.name} to reconnect…`
@@ -430,6 +452,11 @@ export function GameTable({
             <button type="button" className="btn" onClick={() => run({ type: 'pass' })}>Keep card</button>
           )}
           {you.calledUno && view.hand.length === 1 && <span className="badge badge--uno">UNO!</span>}
+          {you.power !== undefined && (
+            <span className={`power ${you.power ? 'power--on' : 'power--off'}`} title="Your Power Card">
+              {you.power ? '⚡ Flex ready' : '✕ Flex used'}
+            </span>
+          )}
           {danger && (
             <span className="badge badge--danger" title="The Mercy rule">
               {view.hand.length}/{view.mercyLimit} cards: at {view.mercyLimit} you're out!
@@ -451,10 +478,11 @@ export function GameTable({
         <div ref={handRef} key={view.side ?? 'cards'} className={`hand ${view.side ? 'hand--flip' : ''}`} style={{ ['--n' as string]: hand.length }}>
           {hand.map((card) => {
             const selected = selection.includes(card.id);
-            const tappable = base ? selected || isExtra(card) : playableIds.has(card.id);
+            const flexOnly = !base && !playableIds.has(card.id) && flexableIds.has(card.id);
+            const tappable = base ? selected || isExtra(card) : playableIds.has(card.id) || flexOnly;
             const classes = [
               'card--hand',
-              tappable && !base ? (yourTurn ? 'card--playable' : 'card--jumpin') : '',
+              tappable && !base ? (flexOnly ? 'card--flexable' : yourTurn ? 'card--playable' : 'card--jumpin') : '',
               base && isExtra(card) && !selected ? 'card--selectable' : '',
               selected ? 'card--selected' : '',
               card.id === view.drawnCardId ? 'card--drawn' : '',
@@ -482,6 +510,22 @@ export function GameTable({
       <Flights flights={flights} onDone={(id) => setFlights((f) => f.filter((x) => x.id !== id))} />
       {showScores && <ScoreboardModal view={view} onClose={() => setShowScores(false)} />}
       {showThemes && <ThemePicker onClose={() => setShowThemes(false)} />}
+      {flexChoice && (
+        <FlexChoice
+          card={flexChoice}
+          canPlayNormally={playableIds.has(flexChoice.id)}
+          customWilds={view.rules.customWilds}
+          onCancel={() => setFlexChoice(null)}
+          onNormal={() => {
+            setFlexChoice(null);
+            submitPlay([flexChoice.id]);
+          }}
+          onFlex={() => {
+            setFlexChoice(null);
+            submitPlay([flexChoice.id], { flex: true });
+          }}
+        />
+      )}
 
       {picker?.kind === 'discard' && (
         <ColorPicker
@@ -524,7 +568,7 @@ export function GameTable({
       {picker?.kind === 'target' && (
         <SwapPicker
           view={view}
-          title="Who draws 2?"
+          title={`Who draws ${picker.choices.flex && flexSide(cardById(picker.cardIds[0]!)) === 'target4' ? 4 : 2}?`}
           onCancel={() => setPicker(null)}
           onPick={(seat) => submitPlay(picker.cardIds, { ...picker.choices, target: seat })}
         />

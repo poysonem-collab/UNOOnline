@@ -1,5 +1,14 @@
 import { createContext, useContext, useId, type ReactNode } from 'react';
-import { customWildFor, customWildTitle, describeCard, type CardFace, type Color, type CustomWild } from '@uno/shared';
+import {
+  customWildFor,
+  customWildTitle,
+  describeCard,
+  FLEX_SIDE_INFO,
+  flexSide,
+  type CardFace,
+  type Color,
+  type CustomWild,
+} from '@uno/shared';
 
 export const CARD_COLORS: Record<Color, string> = {
   red: '#d72600',
@@ -97,7 +106,9 @@ function CardArt({ card }: { card: CardFace }) {
   if (theme === 'allwild' || ALL_WILD_ONLY.has(card.value)) return <AllWildArt value={card.value} />;
   if (theme === 'nomercy' || NO_MERCY_ONLY.has(card.value)) return <NoMercyArt card={card} />;
   const dark = Boolean(card.dark);
-  if (card.color === 'wild') return <WildArt value={card.value} dark={dark} />;
+  // UNO Flex: the flex side shows as a band along the bottom; the flip symbol sits top right.
+  const marks = <FlexMarks card={card} />;
+  if (card.color === 'wild') return <WildArt value={card.value} dark={dark}>{marks}</WildArt>;
   const color = CARD_COLORS[card.color];
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="card__svg">
@@ -107,7 +118,37 @@ function CardArt({ card }: { card: CardFace }) {
         <CornerMark value={card.value} />
       </Corners>
       <CenterMark value={card.value} color={color} />
+      {marks}
     </svg>
+  );
+}
+
+/** UNO Flex: a band in the flex color (or white, on a Flex Wild) saying what the flex side does. */
+function FlexMarks({ card }: { card: CardFace }) {
+  const side = flexSide(card);
+  const wild = card.color === 'wild';
+  const text = side === 'match' ? 'FLEX' : side ? `FLEX ${FLEX_SIDE_INFO[side].short}` : '';
+  return (
+    <>
+      {card.flip && (
+        <g transform="translate(98 26)">
+          <circle r="11" fill="#fff" stroke={BLACK} strokeWidth="2" />
+          <g fill="none" stroke={BLACK} strokeWidth="2.2" strokeLinecap="round">
+            <path d="M -6 1 A 6 6 0 0 1 5 -3" />
+            <path d="M 6 -1 A 6 6 0 0 1 -5 3" />
+          </g>
+          <path d="M 3 -7 L 7 -2 L 1 -1 Z M -3 7 L -7 2 L -1 1 Z" fill={BLACK} />
+        </g>
+      )}
+      {side && (
+        <g>
+          <rect x="6" y="138" width="108" height="28" fill={wild ? '#fff' : CARD_COLORS[card.flex as Color]} stroke={BLACK} strokeWidth="2" />
+          <text x="60" y="157.5" textAnchor="middle" fontSize={text.length > 10 ? 12.5 : 15} className="card__flex" fill={wild ? BLACK : '#fff'} stroke={wild ? 'none' : BLACK} strokeWidth="2.5" paintOrder="stroke">
+            {text}
+          </text>
+        </g>
+      )}
+    </>
   );
 }
 
@@ -303,9 +344,22 @@ function FourColorOval({ rx, ry, border, colors }: { rx: number; ry: number; bor
   );
 }
 
-function WildArt({ value, dark }: { value: Value; dark: boolean }) {
+function WildArt({ value, dark, children }: { value: Value; dark: boolean; children?: ReactNode }) {
   const palette = dark ? DARK_WILD : LIGHT_WILD;
   const label = DRAW_LABELS[value];
+
+  // UNO Flex's Wild All Flip: everyone's Power Card turns over.
+  if (value === 'wildAllFlip') {
+    return (
+      <svg viewBox={`0 0 ${W} ${H}`} className="card__svg">
+        <Frame face={BLACK} />
+        <g transform="translate(60 90)"><FourColorOval rx={40} ry={64} border={4} colors={palette} /></g>
+        <g transform="translate(60 84)"><PowerCardIcon size={1} /></g>
+        <g transform="translate(60 128)"><OutlinedText size={18} fill="#fff">ALL FLIP</OutlinedText></g>
+        <Corners><PowerCardIcon size={0.38} /></Corners>
+      </svg>
+    );
+  }
 
   // Wild Draw Four / Wild Draw Two: mini cards fanned in a white oval.
   if (value === 'wild4' || value === 'wild2') {
@@ -318,6 +372,7 @@ function WildArt({ value, dark }: { value: Value; dark: boolean }) {
           {fan.map(([x, y, i]) => <MiniCard key={i} x={x} y={y} fill={palette[i]!} />)}
         </g>
         <Corners><OutlinedText size={24} fill="#fff">{label}</OutlinedText></Corners>
+        {children}
       </svg>
     );
   }
@@ -334,7 +389,21 @@ function WildArt({ value, dark }: { value: Value; dark: boolean }) {
       ) : (
         <Corners><FourColorOval rx={7} ry={11} border={1.5} colors={palette} /></Corners>
       )}
+      {children}
     </svg>
+  );
+}
+
+/** UNO Flex's Power Card, half green check and half red cross, centered on (0, 0). */
+export function PowerCardIcon({ size }: { size: number }) {
+  return (
+    <g transform={`scale(${size}) rotate(-12)`}>
+      <rect x="-20" y="-28" width="40" height="56" rx="6" fill="#fff" stroke={BLACK} strokeWidth="3" />
+      <path d="M -17 -25 H 17 V 0 H -17 Z" fill="#2fae49" />
+      <path d="M -17 0 H 17 V 25 H -17 Z" fill="#d72600" />
+      <path d="M -8 -13 L -2 -7 L 9 -19" fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" />
+      <path d="M -7 7 L 7 19 M 7 7 L -7 19" stroke="#fff" strokeWidth="4" strokeLinecap="round" />
+    </g>
   );
 }
 

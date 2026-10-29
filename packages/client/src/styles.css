@@ -1100,3 +1100,28 @@ button:disabled { cursor: not-allowed; }
   .status__turn { font-size: 1.25rem; }
   .log { font-size: 1rem; }
 }
+
+/* ---------- UNO Flex ---------- */
+
+.card__flex {
+  font-family: 'Arial Black', 'Helvetica Neue', Arial, sans-serif;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+}
+.card--flexable { transform: translateY(-10px); box-shadow: 0 0 0 3px #b14cff, 0 4px 12px rgba(0, 0, 0, 0.5); }
+.card--flexable:hover { transform: translateY(-22px); z-index: 1; }
+.btn--flex { background: #7b2cbf; color: #fff; }
+.btn--flex:hover:not(:disabled) { background: #9442d8; }
+.flex-choice__card { display: flex; justify-content: center; margin: 0.4rem 0 0.8rem; --card-w: 96px; }
+.power {
+  font-size: 0.8rem;
+  font-weight: 800;
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  white-space: nowrap;
+}
+.power--on { background: #2fae49; color: #fff; }
+.power--off { background: rgba(215, 38, 0, 0.85); color: #fff; }
+.power-dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; flex: none; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35); }
+.power-dot--on { background: #3ad25a; }
+.power-dot--off { background: #ff4b2b; }

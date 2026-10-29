@@ -77,6 +77,15 @@ export function canPlay(card: Card, ctx: PlayContext, handSize: number): boolean
   return canPlayOn(card, ctx.top, ctx.currentColor);
 }
 
+/**
+ * UNO Flex: can `card` be played on its flex side? Needs a green Power Card, no draw cards waiting,
+ * and a flex color matching the color in play (a Flex Wild can always flex).
+ */
+export function canFlex(card: CardFace, ctx: PlayContext, powerGreen: boolean): boolean {
+  if (!powerGreen || !card.flex || ctx.pendingDraw > 0) return false;
+  return card.color === 'wild' || card.flex === ctx.currentColor;
+}
+
 /** Jump-in: playing an identical card (same color and value) out of turn. */
 export function canJumpIn(card: Card, ctx: PlayContext, handSize: number): boolean {
   if (!ctx.rules.jumpIn || card.color === 'wild') return false;
@@ -106,6 +115,26 @@ export function playableCards(state: GameState, seat: number): Card[] {
   const ctx = contextOf(state);
   return player.hand.filter(
     (c) => (state.phase !== 'playDrawn' || c.id === state.drawnCardId) && canPlay(c, ctx, player.hand.length),
+  );
+}
+
+/** UNO Flex: cards the current player could play on their flex side right now. */
+export function flexableCards(state: GameState, seat: number): Card[] {
+  const player = state.players[seat];
+  if (!player || seat !== state.currentPlayer || !state.power?.[seat]) return [];
+  if (state.phase !== 'playing' && state.phase !== 'playDrawn') return [];
+  const ctx = contextOf(state);
+  return player.hand.filter((c) => (state.phase !== 'playDrawn' || c.id === state.drawnCardId) && canFlex(c, ctx, true));
+}
+
+/** UNO Flex: ids of your cards you could play on their flex side right now, from your own view. */
+export function flexableIdsFromView(view: PlayerView): Set<string> {
+  const you = view.players[view.you];
+  const active = view.phase === 'playing' || view.phase === 'playDrawn';
+  if (!active || view.currentPlayer !== view.you || !you?.power) return new Set();
+  const ctx: PlayContext = { top: view.topCard, currentColor: view.currentColor, pendingDraw: view.pendingDraw, rules: view.rules };
+  return new Set(
+    view.hand.filter((c) => (view.phase !== 'playDrawn' || c.id === view.drawnCardId) && canFlex(c, ctx, true)).map((c) => c.id),
   );
 }
 

@@ -2,6 +2,7 @@ import type { Card, CardFace, RuleSet } from '../types.js';
 import { buildDecks, cardPoints } from './classic/deck.js';
 import { buildFlipDecks, FLIP_DECK_SIZE, flipPoints } from './flip/deck.js';
 import { ALL_WILD_DECK_SIZE, allWildPoints, buildAllWildDecks } from './allwild/deck.js';
+import { buildFlexDecks, FLEX_DECK_SIZE } from './flex/deck.js';
 import { buildGiantDecks, GIANT_DECK_SIZE } from './giant/deck.js';
 import { buildNoMercyDecks, NO_MERCY_DECK_SIZE, noMercyPoints } from './nomercy/deck.js';
 
@@ -19,6 +20,8 @@ export interface DeckConfig {
   mercyLimit: number | null;
   /** UNO All Wild: no colors at all, so nobody picks one. */
   colorless?: boolean;
+  /** UNO Flex: every player has a Power Card that lets them play flex sides. */
+  flexPower?: boolean;
 }
 
 export const DECKS: Record<string, DeckConfig> = {
@@ -37,6 +40,15 @@ export const DECKS: Record<string, DeckConfig> = {
     canStart: (card) => card.color !== 'wild' && card.value !== 'flip',
     pointsToWin: 500,
     mercyLimit: null,
+  },
+  flex: {
+    size: FLEX_DECK_SIZE,
+    build: (deckCount, rng) => [buildFlexDecks(deckCount), rng],
+    points: cardPoints,
+    canStart: (card) => card.color !== 'wild',
+    pointsToWin: 500,
+    mercyLimit: null,
+    flexPower: true,
   },
   'all-wild': {
     size: ALL_WILD_DECK_SIZE,
