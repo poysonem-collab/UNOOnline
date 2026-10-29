@@ -1,5 +1,5 @@
 import { ALL_COLORS, colorsForSide, type Action, type Card, type CardFace, type Color, type GameState } from '../../types.js';
-import { deckFor } from '../decks.js';
+import { deckFor, mercyLimitFor } from '../decks.js';
 import type { BotDifficulty } from '../Variant.js';
 import { canChallenge } from './engine.js';
 import { customWildFor } from '../giant/customWilds.js';
@@ -247,7 +247,7 @@ function know(state: GameState, seat: number): Knowledge {
     backs: state.players.map((p, i) => (state.side && i !== seat ? p.hand.map((c) => c.other!) : null)),
     pointsMode: state.rules.winCondition === 'points500',
     points: deckFor(state.variantId).points,
-    mercyLimit: deckFor(state.variantId).mercyLimit,
+    mercyLimit: mercyLimitFor(state.variantId, state.rules),
     colorless: deckFor(state.variantId).colorless === true,
   };
 }

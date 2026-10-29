@@ -96,6 +96,8 @@ export interface RuleSet {
   noActionFinish: boolean;
   /** UNO Show 'Em No Mercy: shuffle in the Expansion Pack cards (10s, Wild Discard All, Wild Reverse Draw 8). */
   noMercyExpansion: boolean;
+  /** UNO Show 'Em No Mercy: holding this many cards knocks you out (the Mercy rule). */
+  mercyLimit: 25 | 50;
   /** Giant UNO: what the host wrote on each blank wild card (custom1, custom2). */
   customWilds: CustomWild[];
   handSize: number;
@@ -124,6 +126,7 @@ export const DEFAULT_RULES: RuleSet = {
   challengeWild4: false,
   noActionFinish: false,
   noMercyExpansion: false,
+  mercyLimit: 25,
   customWilds: [],
   handSize: 7,
   turnTimerSeconds: 0,

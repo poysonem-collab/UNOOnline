@@ -13,6 +13,16 @@ export const noMercy: Variant = {
   name: "UNO Show 'Em No Mercy",
   defaultRules: { ...DEFAULT_RULES, stackDraws: true, sevenZero: true, drawUntilPlayable: true },
   // Stacking, 7-0 and draw-until-playable are part of the game, so the host can't turn them off.
-  availableRules: ['handSize', 'turnTimerSeconds', 'deckCount', 'winCondition', 'noMercyExpansion', 'stackSameNumber', 'jumpIn', 'noActionFinish'],
+  availableRules: [
+    'handSize',
+    'turnTimerSeconds',
+    'deckCount',
+    'winCondition',
+    'mercyLimit',
+    'noMercyExpansion',
+    'stackSameNumber',
+    'jumpIn',
+    'noActionFinish',
+  ],
   createGame: (players, rules, seed) => createGame(players, rules, seed, 'no-mercy'),
 };

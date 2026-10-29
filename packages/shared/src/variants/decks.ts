@@ -16,8 +16,8 @@ export interface DeckConfig {
   canStart(card: Card): boolean;
   /** Points needed to win a points game. */
   pointsToWin: number;
-  /** No Mercy: a hand this big is knocked out of the round. */
-  mercyLimit: number | null;
+  /** No Mercy: players holding too many cards (RuleSet.mercyLimit) are knocked out of the round. */
+  mercyRule?: boolean;
   /** UNO All Wild: no colors at all, so nobody picks one. */
   colorless?: boolean;
   /** UNO Flex: every player has a Power Card that lets them play flex sides. */
@@ -31,7 +31,6 @@ export const DECKS: Record<string, DeckConfig> = {
     points: cardPoints,
     canStart: (card) => card.color !== 'wild',
     pointsToWin: 500,
-    mercyLimit: null,
   },
   flip: {
     size: FLIP_DECK_SIZE,
@@ -39,7 +38,6 @@ export const DECKS: Record<string, DeckConfig> = {
     points: flipPoints,
     canStart: (card) => card.color !== 'wild' && card.value !== 'flip',
     pointsToWin: 500,
-    mercyLimit: null,
   },
   flex: {
     size: FLEX_DECK_SIZE,
@@ -47,7 +45,6 @@ export const DECKS: Record<string, DeckConfig> = {
     points: cardPoints,
     canStart: (card) => card.color !== 'wild',
     pointsToWin: 500,
-    mercyLimit: null,
     flexPower: true,
   },
   'all-wild': {
@@ -57,7 +54,6 @@ export const DECKS: Record<string, DeckConfig> = {
     // Start on a plain Wild, so nobody is hit before the game begins.
     canStart: (card) => card.value === 'wild',
     pointsToWin: 500,
-    mercyLimit: null,
     colorless: true,
   },
   giant: {
@@ -66,7 +62,6 @@ export const DECKS: Record<string, DeckConfig> = {
     points: cardPoints,
     canStart: (card) => card.color !== 'wild',
     pointsToWin: 500,
-    mercyLimit: null,
   },
   'no-mercy': {
     size: NO_MERCY_DECK_SIZE,
@@ -75,9 +70,14 @@ export const DECKS: Record<string, DeckConfig> = {
     // Start on a plain number so the first player isn't hit by a monster card.
     canStart: (card) => typeof card.value === 'number' && card.value !== 10,
     pointsToWin: 1000,
-    mercyLimit: 25,
+    mercyRule: true,
   },
 };
+
+/** No Mercy: the hand size that knocks a player out under these rules (null in games without the Mercy rule). */
+export function mercyLimitFor(variantId: string, rules: RuleSet): number | null {
+  return deckFor(variantId).mercyRule ? rules.mercyLimit : null;
+}
 
 export function deckFor(variantId: string): DeckConfig {
   const deck = DECKS[variantId];

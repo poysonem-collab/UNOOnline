@@ -1,5 +1,5 @@
 import type { Card, CardFace, Color, GameState } from '../../types.js';
-import { deckFor } from '../decks.js';
+import { deckFor, mercyLimitFor } from '../decks.js';
 import { canPlayOn, drawAmount } from './rules.js';
 
 /**
@@ -49,7 +49,7 @@ export interface Search {
  * against Hard bots this won more often, and faster, than playing every game out).
  */
 export function searchFor(state: GameState): Search {
-  return deckFor(state.variantId).mercyLimit === null ? { budget: 360, depth: 500 } : { budget: 600, depth: 20 };
+  return deckFor(state.variantId).mercyRule ? { budget: 600, depth: 20 } : { budget: 360, depth: 500 };
 }
 
 export interface Candidate {
@@ -126,7 +126,7 @@ function imagine(state: GameState, seat: number, unseen: SimCard[], colors: read
     stack: rules.stackDraws,
     sevenZero: rules.sevenZero,
     pending: state.pendingDraw,
-    mercy: deckFor(state.variantId).mercyLimit,
+    mercy: mercyLimitFor(state.variantId, state.rules),
     out: [...state.out],
     random,
   };

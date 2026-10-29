@@ -5,6 +5,7 @@ import {
   getVariant,
   HAND_SIZES,
   MAX_CUSTOM_NAME,
+  MERCY_LIMITS,
   needsTwoDecks,
   type CustomEffect,
   type CustomWild,
@@ -104,6 +105,17 @@ export function RulesPanel({ variantId = 'classic', rules, onChange, playerCount
       </div>
       {twoDecksRequired && <p className="hint">This many players and cards needs 2 decks.</p>}
 
+      {offered.includes('mercyLimit') && (
+        <div className="field">
+          <span>Knocked out at</span>
+          <Segmented
+            value={rules.mercyLimit}
+            options={MERCY_LIMITS.map((n) => [n, `${n} cards`] as [RuleSet['mercyLimit'], string])}
+            onChange={(v) => set('mercyLimit', v)}
+          />
+        </div>
+      )}
+
       {online && (
         <label className="field">
           <span>Turn timer</span>
@@ -124,7 +136,7 @@ export function RulesPanel({ variantId = 'classic', rules, onChange, playerCount
       {variantId === 'no-mercy' && (
         <p className="rules__builtin">
           Always on in No Mercy: stacking draw cards (equal or higher), 7-0, draw until you can play, and the
-          Mercy rule: anyone holding 25 or more cards is knocked out.
+          Mercy rule: anyone holding {rules.mercyLimit} or more cards is knocked out.
         </p>
       )}
       {houseRules.map(({ key, label, hint }) => (

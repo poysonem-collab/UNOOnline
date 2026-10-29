@@ -8,6 +8,8 @@ const MIN_DRAW_PILE = 10;
 
 export const HAND_SIZES = [5, 6, 7, 8, 9, 10] as const;
 export const TURN_TIMERS = [0, 15, 30, 60] as const;
+/** No Mercy: how many cards knock you out. */
+export const MERCY_LIMITS = [25, 50] as const;
 
 export function needsTwoDecks(playerCount: number, handSize: number, variantId = 'classic'): boolean {
   return playerCount * handSize >= deckFor(variantId).size - MIN_DRAW_PILE;
@@ -33,6 +35,8 @@ export function sanitizeRules(variant: Variant, input: unknown): RuleSet {
       if (value === 1 || value === 2) rules.deckCount = value;
     } else if (key === 'winCondition') {
       if (value === 'firstOut' || value === 'points500') rules.winCondition = value;
+    } else if (key === 'mercyLimit') {
+      if (MERCY_LIMITS.includes(value as 25)) rules.mercyLimit = value as RuleSet['mercyLimit'];
     } else if (key === 'customWilds') {
       rules.customWilds = sanitizeCustomWilds(value, variant.defaultRules.customWilds);
     } else if (typeof fallback === 'boolean' && typeof value === 'boolean') {

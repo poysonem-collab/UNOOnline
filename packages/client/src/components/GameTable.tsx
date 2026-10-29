@@ -18,7 +18,7 @@ import { Card, CardBack, CARD_COLORS, CardThemeContext, cardThemeFor, CustomWild
 import { ColorPicker } from './ColorPicker';
 import { Confetti } from './Confetti';
 import { Flights, type Flight } from './Flights';
-import { Opponent } from './Opponent';
+import { mercyWarningAt, Opponent } from './Opponent';
 import { RevealedHands, ScoreboardModal, Standings } from './Scoreboard';
 import { SwapPicker } from './SwapPicker';
 import { ThemePicker } from './ThemePicker';
@@ -83,8 +83,6 @@ const VALUE_ORDER = [
   'skip', 'skipAll', 'reverse', 'flip', 'discardAll', 'draw1', 'draw2', 'draw4', 'draw5',
   'wild', 'wild2', 'wild4', 'wildColor', 'roulette', 'wildDiscardAll', 'wildRev4', 'wild6', 'wildRev8', 'wild10',
 ];
-/** No Mercy: warn when your hand gets this close to the Mercy limit. */
-const MERCY_WARNING = 5;
 
 function sortHand(hand: CardData[]): CardData[] {
   return [...hand].sort(
@@ -316,7 +314,7 @@ export function GameTable({
   const canCallUno =
     gameActive && !you.out && !you.calledUno &&
     (view.hand.length <= 2 || discardLeavesOne || (selection.length > 0 && view.hand.length - selection.length === 1));
-  const danger = view.mercyLimit !== null && !you.out && gameActive && view.hand.length >= view.mercyLimit - MERCY_WARNING;
+  const danger = view.mercyLimit !== null && !you.out && gameActive && view.hand.length >= mercyWarningAt(view.mercyLimit);
   const canJumpIn = !yourTurn && gameActive && playableIds.size > 0;
   const current = view.players[view.currentPlayer]!;
   const status =

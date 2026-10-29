@@ -29,7 +29,7 @@ takes up to a minute.
   - **Wilds**: Wild Reverse Draw 4, Wild Draw 6, Wild Draw 10, and Wild Color Roulette (the next
     player picks a color, then flips cards until it turns up and keeps them all).
   - **Always on**: stacking draw cards (only an equal or bigger one), 7-0, and draw until you can play.
-  - **Mercy rule**: reach 25 cards and you're knocked out for the round. Your cards go back in the
+  - **Mercy rule**: reach 25 cards (or 50, if the host picks that) and you're knocked out for the round. Your cards go back in the
     deck, but they still count toward the winner's score. The last player standing wins.
   - Points games play to 1,000 (numbers face value, colored action cards 20, wilds 50).
   - **Expansion Pack** (optional host rule): adds 10s (play again), Wild Discard All (pick a color to

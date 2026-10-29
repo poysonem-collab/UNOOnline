@@ -16,12 +16,13 @@ interface OpponentProps {
 }
 
 const MAX_FAN = 8;
-/** No Mercy: show a hand this close to the Mercy limit in red. */
-const DANGER_MARGIN = 5;
+
+/** No Mercy: hands in the last fifth before the Mercy limit (20 of 25, 40 of 50) show a warning. */
+export const mercyWarningAt = (limit: number) => limit - Math.round(limit / 5);
 
 export function Opponent({ player, isTurn, canCatch, score, mercyLimit = null, away, onCatch, elRef }: OpponentProps) {
   const fan = Math.min(player.handCount, MAX_FAN);
-  const danger = mercyLimit !== null && !player.out && player.handCount >= mercyLimit - DANGER_MARGIN;
+  const danger = mercyLimit !== null && !player.out && player.handCount >= mercyWarningAt(mercyLimit);
   const classes = ['opponent', isTurn ? 'opponent--turn' : '', away ? 'opponent--away' : '', player.out ? 'opponent--out' : ''];
   return (
     <div ref={elRef} className={classes.join(' ')}>

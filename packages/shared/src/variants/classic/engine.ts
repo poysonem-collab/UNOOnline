@@ -15,7 +15,7 @@ import {
   type PlayerView,
   type RuleSet,
 } from '../../types.js';
-import { deckFor } from '../decks.js';
+import { deckFor, mercyLimitFor } from '../decks.js';
 import { customWildFor } from '../giant/customWilds.js';
 import { flexNeedsTarget, flexSide, type FlexSide } from '../flex/flex.js';
 import { activeSeats, canFlex, canJumpIn, canPlay, canStackTogether, contextOf, drawAmount, isPlayable, isWildDraw, seatAfter, topCard } from './rules.js';
@@ -120,7 +120,7 @@ export function getPlayerView(state: GameState, seat: number): PlayerView {
     scores: state.scores,
     round: state.round,
     pointsToWin: deck.pointsToWin,
-    mercyLimit: deck.mercyLimit,
+    mercyLimit: mercyLimitFor(state.variantId, state.rules),
     history: state.history,
     revealedHands: state.phase === 'roundOver' || state.phase === 'gameOver' ? state.players.map((p) => p.hand) : null,
     rules: state.rules,
@@ -807,7 +807,7 @@ function giveCards(state: GameState, seat: number, cards: Card[], events: GameEv
   player.hand.push(...cards);
   // A handful of new cards means what we noticed about this player may no longer hold.
   if (cards.length >= 2) state.voids[seat] = [];
-  const limit = deckFor(state.variantId).mercyLimit;
+  const limit = mercyLimitFor(state.variantId, state.rules);
   player.calledUno = false;
   events.push({ type: 'drew', seat, count: cards.length });
   if (limit !== null && player.hand.length >= limit) eliminate(state, seat, events);

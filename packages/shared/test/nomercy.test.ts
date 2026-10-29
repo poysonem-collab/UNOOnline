@@ -167,6 +167,24 @@ describe('the Mercy rule', () => {
     expect(totalCards(result.state)).toBe(totalCards(state));
   });
 
+  it('can be set to 50 cards instead of 25', () => {
+    expect(sanitizeRules(noMercy, { mercyLimit: 50 }).mercyLimit).toBe(50);
+    expect(sanitizeRules(noMercy, { mercyLimit: 30 }).mercyLimit).toBe(25);
+    const pile50 = Array.from({ length: 60 }, () => 'r1');
+    // 15 + 10 = 25 cards: knocked out at 25, but not at 50.
+    const at25 = nm({ hands: [['wild10', 'r1'], bigHand(15), ['g1', 'g2']], top: 'r5', drawPile: pile50, rules: { stackDraws: false } });
+    const at50 = nm({ hands: [['wild10', 'r1'], bigHand(15), ['g1', 'g2']], top: 'r5', drawPile: pile50, rules: { stackDraws: false, mercyLimit: 50 } });
+    const play = (state: GameState) => ok(applyAction(state, 0, { type: 'play', cardIds: [cardId(state, 0, 0)], color: 'green' })).state;
+    expect(play(at25).out[1]).toBe(true);
+    expect(play(at50).out[1]).toBe(false);
+    expect(getPlayerView(at50, 0).mercyLimit).toBe(50);
+    // 40 + 10 = 50: out.
+    const big = nm({ hands: [['wild10', 'r1'], bigHand(40), ['g1', 'g2']], top: 'r5', drawPile: pile50, rules: { stackDraws: false, mercyLimit: 50 } });
+    expect(play(big).out[1]).toBe(true);
+    // Other games have no Mercy rule, whatever the setting.
+    expect(classic.getPlayerView(makeState({ hands: [['r1'], ['r2']], top: 'r5', rules: { mercyLimit: 50 } }), 0).mercyLimit).toBeNull();
+  });
+
   it('also counts cards drawn from a stack, and skips knocked-out players afterwards', () => {
     const state = nm({ hands: [['wild10', 'r1', 'r2'], bigHand(15), ['g1', 'g2'], ['y1', 'y2']], top: 'r5', drawPile: pile });
     const played = act(state, 0, { type: 'play', cardIds: [cardId(state, 0, 0)], color: 'red' });
@@ -266,7 +284,13 @@ describe('No Mercy bots', () => {
       const levels = Array.from({ length: n }, (_, i) => BOT_LEVELS[(i + seed) % 4]!);
       const players = levels.map((_, i) => ({ id: `b${i}`, name: `Bot ${i}`, isBot: true }));
       const expansion = seed % 4 < 2;
-      const rules: RuleSet = { ...noMercy.defaultRules, jumpIn: seed % 3 === 0, stackSameNumber: seed % 2 === 0, noMercyExpansion: expansion };
+      const rules: RuleSet = {
+        ...noMercy.defaultRules,
+        jumpIn: seed % 3 === 0,
+        stackSameNumber: seed % 2 === 0,
+        noMercyExpansion: expansion,
+        mercyLimit: seed % 5 === 0 ? 50 : 25,
+      };
       let state = createGame(players, rules, seed);
       const random = seeded(seed + 7);
       let done = false;
