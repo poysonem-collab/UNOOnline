@@ -201,7 +201,8 @@ export interface RoundResult {
 
 export type Action =
   /** With several cards (same-number stacking) the first must be playable; the last decides the color. */
-  | { type: 'play'; cardIds: string[]; color?: Color; swapWith?: number; discardColor?: Color; target?: number }
+  /** `swapWith` names one player per 7 when several 7s are played together (7-0). */
+  | { type: 'play'; cardIds: string[]; color?: Color; swapWith?: number | number[]; discardColor?: Color; target?: number }
   /** Takes one card, or the pending penalty when one is waiting. */
   | { type: 'draw' }
   | { type: 'pass' }

@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { colorName, colorsForSide, customWildFor, describeCard, type Action, type Card as CardData, type Color, type PlayerView } from '@uno/shared';
+import {
+  canStackTogether,
+  colorName,
+  colorsForSide,
+  customWildFor,
+  describeCard,
+  valueName,
+  type Action,
+  type Card as CardData,
+  type Color,
+  type PlayerView,
+} from '@uno/shared';
 import { Card, CardBack, CARD_COLORS, CardThemeContext, cardThemeFor, CustomWildsContext } from './Card';
 import { ColorPicker } from './ColorPicker';
 import { Confetti } from './Confetti';
@@ -80,7 +91,7 @@ function sortHand(hand: CardData[]): CardData[] {
 }
 
 /** Choices a play can need on top of the cards themselves. */
-type PlayChoices = { color?: Color; swapWith?: number; discardColor?: Color; target?: number };
+type PlayChoices = { color?: Color; swapWith?: number[]; discardColor?: Color; target?: number };
 
 /** Small stable tilt per card so the discard pile looks hand-thrown. */
 function tilt(id: string): number {
@@ -245,12 +256,15 @@ export function GameTable({
     if ((last.value === 'wildDiscardAll' || custom === 'discardColor') && !choices.discardColor) return ask('discard');
     if (last.color === 'wild' && last.value !== 'roulette' && !colorless && !choices.color) return ask('color');
     const swaps = ((view.rules.sevenZero && last.value === 7) || custom === 'swapHands' || last.value === 'wildSwap') && view.hand.length > cardIds.length;
-    if (swaps && choices.swapWith === undefined) return ask('swap');
+    // Several 7s swap once each: ask for one player per 7.
+    if (swaps && (choices.swapWith?.length ?? 0) < swapsNeeded(cardIds)) return ask('swap');
     if (last.value === 'wildTarget2' && choices.target === undefined) return ask('target');
     setPicker(null);
     setSelection([]);
-    run({ type: 'play', cardIds, ...choices });
+    const { swapWith, ...rest } = choices;
+    run({ type: 'play', cardIds, ...rest, ...(swapWith ? { swapWith: swapWith.length === 1 ? swapWith[0]! : swapWith } : {}) });
   };
+  const swapsNeeded = (cardIds: string[]) => (cardById(cardIds[0]!).value === 7 ? cardIds.length : 1);
 
   const base = selection.length ? cardById(selection[0]!) : null;
   const isExtra = (card: CardData) => base !== null && card.id !== base.id && card.value === base.value;
@@ -263,8 +277,8 @@ export function GameTable({
       return;
     }
     if (!playableIds.has(card.id)) return;
-    // With same-number stacking, holding more of this number starts a selection.
-    const more = view.rules.stackSameNumber && typeof card.value === 'number' && view.hand.some((c) => c.id !== card.id && c.value === card.value);
+    // With same-number stacking, holding more of this number (or action) starts a selection.
+    const more = view.rules.stackSameNumber && canStackTogether(card.value) && view.hand.some((c) => c.id !== card.id && c.value === card.value);
     if (more) setSelection([card.id]);
     else submitPlay([card.id]);
   };
@@ -428,7 +442,10 @@ export function GameTable({
           </p>
         )}
         {base && (
-          <p className="you__hint">Tap your other {String(base.value)}s to play them too. The last one you pick sets the color.</p>
+          <p className="you__hint">
+            Tap your other {valueName(base.value)}s to play them too{typeof base.value === 'number' ? '' : ' (each one counts)'}.
+            The last one you pick sets the color.
+          </p>
         )}
         {/* Keyed by side so the whole hand turns over when the cards flip. */}
         <div ref={handRef} key={view.side ?? 'cards'} className={`hand ${view.side ? 'hand--flip' : ''}`} style={{ ['--n' as string]: hand.length }}>
@@ -497,8 +514,11 @@ export function GameTable({
       {picker?.kind === 'swap' && (
         <SwapPicker
           view={view}
+          {...(swapsNeeded(picker.cardIds) > 1
+            ? { title: `Swap ${(picker.choices.swapWith?.length ?? 0) + 1} of ${swapsNeeded(picker.cardIds)}: swap hands with…` }
+            : {})}
           onCancel={() => setPicker(null)}
-          onPick={(seat) => submitPlay(picker.cardIds, { ...picker.choices, swapWith: seat })}
+          onPick={(seat) => submitPlay(picker.cardIds, { ...picker.choices, swapWith: [...(picker.choices.swapWith ?? []), seat] })}
         />
       )}
       {picker?.kind === 'target' && (

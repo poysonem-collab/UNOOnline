@@ -10,7 +10,7 @@ import {
   type GameState,
   type RuleSet,
 } from '../src/index.js';
-import { jumpInCards } from '../src/variants/classic/rules.js';
+import { jumpInCards, canStackTogether } from '../src/variants/classic/rules.js';
 import { cardId, makeState, totalCards } from './helpers.js';
 
 const { applyAction, getPlayerView } = classic;
@@ -102,9 +102,61 @@ describe('stacking same numbers', () => {
     expect(err(play(off, 0, [0, 1]))).toMatch(/one card at a time/);
 
     const state = makeState({ hands: [['r5', 'b6', 'b5', 'rskip'], ['y1']], top: 'r2', rules });
-    expect(err(play(state, 0, [0, 1]))).toMatch(/same number/);
+    expect(err(play(state, 0, [0, 1]))).toMatch(/all the same/);
     expect(err(play(state, 0, [2, 0]))).toMatch(/cannot be played/);
     expect(err(play(state, 0, [3, 3]))).toMatch(/same card twice/);
+  });
+});
+
+describe('stacking identical action cards', () => {
+  const rules = { stackSameNumber: true };
+
+  it('two Skips skip two players (or everyone else, and you go again)', () => {
+    const four = makeState({ hands: [['rskip', 'bskip', 'g1'], ['y1'], ['y2'], ['y3']], top: 'r2', rules });
+    const s1 = ok(play(four, 0, [0, 1]));
+    expect(s1.currentPlayer).toBe(3);
+    expect(s1.currentColor).toBe('blue');
+    const three = makeState({ hands: [['rskip', 'bskip', 'g1'], ['y1'], ['y2']], top: 'r2', rules });
+    expect(ok(play(three, 0, [0, 1])).currentPlayer).toBe(0);
+  });
+
+  it('two Reverses turn play round and back again', () => {
+    const state = makeState({ hands: [['rreverse', 'greverse', 'g1'], ['y1'], ['y2']], top: 'r2', rules });
+    const s1 = ok(play(state, 0, [0, 1]));
+    expect([s1.direction, s1.currentPlayer]).toEqual([1, 1]);
+  });
+
+  it('two Draw Twos make the next player draw 4 (or add 4 to a stack)', () => {
+    const state = makeState({ hands: [['rdraw2', 'bdraw2', 'g1'], ['y1'], ['y2']], top: 'r2', rules });
+    const s1 = ok(play(state, 0, [0, 1]));
+    expect(hand(s1, 1)).toHaveLength(5);
+    expect(s1.currentPlayer).toBe(2);
+    const stacking = makeState({ hands: [['rdraw2', 'bdraw2', 'g1'], ['y1'], ['y2']], top: 'r2', rules: { ...rules, stackDraws: true } });
+    expect(ok(play(stacking, 0, [0, 1])).pendingDraw).toBe(4);
+  });
+
+  it('two Wild Draw Fours make the next player draw 8', () => {
+    const state = makeState({ hands: [['wild4', 'wild4', 'g1'], ['y1'], ['y2']], top: 'r2', rules });
+    const s1 = ok(applyAction(state, 0, { type: 'play', cardIds: [cardId(state, 0, 0), cardId(state, 0, 1)], color: 'green' }));
+    expect(hand(s1, 1)).toHaveLength(9);
+  });
+
+  it("keeps cards whose effect can't repeat to one at a time", () => {
+    const flipState = makeState({ hands: [['wildColor', 'wildColor', 'g1'], ['y1']], top: 'r2', rules });
+    expect(err(play(flipState, 0, [0, 1]))).toMatch(/one at a time/);
+  });
+
+  it('with 7-0, every 7 swaps and every 0 passes hands along', () => {
+    const both = { ...rules, sevenZero: true };
+    const sevens = makeState({ hands: [['r7', 'b7', 'g1', 'g2'], ['y1'], ['y2', 'y3', 'y4']], top: 'r2', rules: both });
+    expect(err(play(sevens, 0, [0, 1], { swapWith: 1 }))).toMatch(/one per 7/);
+    // Swap with 1 (we get 1 card), then with 2 (we get 3 cards; player 2 gets the 1 card).
+    const swapped = ok(play(sevens, 0, [0, 1], { swapWith: [1, 2] }));
+    expect([hand(swapped, 0).length, hand(swapped, 1).length, hand(swapped, 2).length]).toEqual([3, 2, 1]);
+    const zeros = makeState({ hands: [['r0', 'b0', 'g1'], ['y1', 'y2'], ['y3', 'y4', 'y5']], top: 'r2', rules: both });
+    // Passed along twice: everyone ends up with the hand from two seats back.
+    const passed = ok(play(zeros, 0, [0, 1]));
+    expect([hand(passed, 0).length, hand(passed, 1).length, hand(passed, 2).length]).toEqual([2, 3, 1]);
   });
 });
 
@@ -319,11 +371,15 @@ describe('simulated games with house rules', () => {
         }
         if (action.type === 'play') {
           const card = state.players[seat]!.hand.find((c) => c.id === action.cardIds[0])!;
-          if (card.value === 7) action.swapWith = (seat + 1 + Math.floor(random() * (n - 1))) % n;
-          if (rules.stackSameNumber && typeof card.value === 'number') {
-            const more = state.players[seat]!.hand.filter((c) => c.id !== card.id && c.value === card.value);
+          if (rules.stackSameNumber && canStackTogether(card.value)) {
+            const hand = state.players[seat]!.hand;
+            let more = hand.filter((c) => c.id !== card.id && c.value === card.value);
+            if (rules.noActionFinish && typeof card.value !== 'number') more = more.slice(0, Math.max(0, hand.length - 2));
             action.cardIds.push(...more.slice(0, Math.floor(random() * (more.length + 1))).map((c) => c.id));
           }
+          // One swap per 7.
+          const randomOther = () => (seat + 1 + Math.floor(random() * (n - 1))) % n;
+          if (card.value === 7) action.swapWith = action.cardIds.map(randomOther);
         }
         const result = applyAction(state, seat, action);
         if (!result.ok) throw new Error(`seed ${seed} step ${steps}: ${result.error} (${JSON.stringify(action)})`);

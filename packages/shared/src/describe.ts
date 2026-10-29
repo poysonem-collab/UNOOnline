@@ -32,6 +32,11 @@ export function colorName(color: Color): string {
   return color[0]!.toUpperCase() + color.slice(1);
 }
 
+/** "5", "Skip", "Wild Draw Four": a card's value without its color. */
+export function valueName(value: CardFace['value']): string {
+  return VALUE_NAMES[String(value)] ?? String(value);
+}
+
 /** "Red 5", "Blue Skip", "Wild Draw Four" (and with the rules, Giant UNO's blank wilds: "Wild: Shuffle hands"). */
 export function describeCard(card: CardFace, rules?: Pick<RuleSet, 'customWilds'>): string {
   const custom = rules && customWildFor(rules, card.value);

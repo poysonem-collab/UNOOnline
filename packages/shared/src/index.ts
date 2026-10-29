@@ -25,7 +25,7 @@ export { CUSTOM_EFFECT_INFO, customWildFor, customWildTitle, GIANT_CUSTOM_WILDS,
 export { deckFor } from './variants/decks.js';
 export { BOT_CATCH_CHANCE, BOT_JUMP_IN_CHANCE, BOT_LEVELS, BOT_REACTION } from './variants/classic/bot.js';
 export { buildClassicDeck, cardPoints } from './variants/classic/deck.js';
-export { canPlayOn, playableIdsFromView } from './variants/classic/rules.js';
+export { canPlayOn, canStackTogether, playableIdsFromView } from './variants/classic/rules.js';
 
 export const VARIANTS: Record<string, Variant> = {
   [classic.id]: classic,

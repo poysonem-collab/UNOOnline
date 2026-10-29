@@ -18,6 +18,19 @@ export function drawAmount(card: CardFace): number {
   return DRAW_AMOUNTS[card.value] ?? 0;
 }
 
+/**
+ * Cards that can be played several at a time with "Stack same numbers": numbers, and action cards
+ * whose effect can simply happen again (two Skips skip two players, two +2s draw 4...).
+ */
+const STACKABLE_ACTIONS = new Set<CardValue>([
+  'skip', 'reverse', 'skipAll', 'draw1', 'draw2', 'draw4', 'draw5', 'discardAll',
+  'wild', 'wild2', 'wild4', 'wild6', 'wild10', 'wildRev4', 'wildRev8',
+]);
+
+export function canStackTogether(value: CardValue): boolean {
+  return typeof value === 'number' || STACKABLE_ACTIONS.has(value);
+}
+
 /** Wild +4 and UNO Flip's Wild Draw Two: only allowed with no card of the current color, and challengeable. */
 export function isWildDraw(card: CardFace): boolean {
   return card.value === 'wild4' || card.value === 'wild2';

@@ -80,7 +80,7 @@ The host can switch these on in the lobby (or on the setup screen for bot games)
 | Rule | What it does |
 |---|---|
 | Stack +2 / +4 | Hit with a draw card? Play your own to pass the total on. Optional: allow a +2 on a +4 (in the +4's color). |
-| Stack same numbers | Play several cards of the same number at once, in any colors. The last one sets the color. |
+| Stack same numbers | Play several cards of the same number at once, in any colors. The last one sets the color. Matching action cards work too, and every one takes effect: two Skips skip two players, two Reverses cancel out, two +2s make the next player draw 4, and with 7-0 each 7 swaps (you pick a player for each) and each 0 passes hands along. |
 | 7-0 | A 7 swaps hands with a player you choose; a 0 passes every hand along. |
 | Jump-in | Hold the exact same card as the top one? Play it any time, even out of turn. |
 | Draw until playable | Keep drawing until you get a card you can play. |

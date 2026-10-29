@@ -4,7 +4,7 @@ import type { BotDifficulty } from '../Variant.js';
 import { canChallenge } from './engine.js';
 import { customWildFor } from '../giant/customWilds.js';
 import { lookaheadSupported, rateCandidates, searchFor, type Candidate } from './lookahead.js';
-import { drawAmount, isWildDraw, jumpInCards, playableCards, seatAfter } from './rules.js';
+import { canStackTogether, drawAmount, isWildDraw, jumpInCards, playableCards, seatAfter } from './rules.js';
 
 /**
  * Bots at four levels, modelled on how real people play UNO:
@@ -99,7 +99,7 @@ export function chooseBotMove(
   if (difficulty === 'easy') {
     cards = [pickRandom(playable, random)];
   } else if (difficulty === 'normal') {
-    cards = withSameNumbers(state, k.hand, pickNormal(state, k, playable));
+    cards = withMatchingCards(state, k.hand, pickNormal(state, k, playable));
   } else {
     const best = pickStrong(state, k, playable, difficulty, random);
     // A strong player keeps a freshly drawn wild for later instead of spending it now.
@@ -123,7 +123,7 @@ export function chooseBotJumpIn(state: GameState, seat: number, difficulty: BotD
   const card = jumpInCards(state, seat)[0];
   if (!card) return null;
   const k = know(state, seat);
-  const cards = difficulty === 'easy' ? [card] : withSameNumbers(state, k.hand, card);
+  const cards = difficulty === 'easy' ? [card] : withMatchingCards(state, k.hand, card);
   const action = playAction(state, k, cards, difficulty, random);
   return withUnoCall(state, seat, handAfterPlay(k.hand, cards, action), PROFILES[difficulty], random, action);
 }
@@ -251,7 +251,7 @@ function pickNormal(state: GameState, k: Knowledge, playable: Card[]): Card {
  */
 function pickStrong(state: GameState, k: Knowledge, playable: Card[], level: BotDifficulty, random: () => number): Card[] | null {
   const expert = level === 'expert';
-  const moves = playable.map((card) => withSameNumbers(state, k.hand, card));
+  const moves = playable.map((card) => withMatchingCards(state, k.hand, card));
   // Expert: think a few turns ahead when there's a real choice to make (keeping a drawn card,
   // or taking the stacked cards instead of passing them on, count as choices too).
   const canHoldBack = state.phase === 'playDrawn' || state.pendingDraw > 0;
@@ -508,12 +508,16 @@ function playAction(state: GameState, k: Knowledge, cards: Card[], level: BotDif
 }
 
 /**
- * With same-number stacking, also plays every other card of that number,
- * ending on the color we hold most of.
+ * With same-number stacking, also plays every other card of that number (or action:
+ * two Skips skip two players), ending on the color we hold most of.
  */
-function withSameNumbers(state: GameState, hand: Card[], first: Card): Card[] {
-  if (!state.rules.stackSameNumber || typeof first.value !== 'number') return [first];
-  const extras = hand.filter((c) => c !== first && c.value === first.value);
+function withMatchingCards(state: GameState, hand: Card[], first: Card): Card[] {
+  if (!state.rules.stackSameNumber || !canStackTogether(first.value)) return [first];
+  // Wilds are worth keeping, and with 7-0 each extra 7 or 0 would swap or pass hands again: one at a time.
+  if (first.color === 'wild' || (state.rules.sevenZero && (first.value === 7 || first.value === 0))) return [first];
+  let extras = hand.filter((c) => c !== first && c.value === first.value);
+  // Can't go out on action cards with that rule: keep one back.
+  if (state.rules.noActionFinish && typeof first.value !== 'number') extras = extras.slice(0, Math.max(0, hand.length - 2));
   if (extras.length === 0) return [first];
   const counts = countColors(hand.filter((c) => c.value !== first.value));
   extras.sort((a, b) => colorCount(counts, a) - colorCount(counts, b));

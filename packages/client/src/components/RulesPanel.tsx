@@ -32,7 +32,11 @@ const HOUSE_RULES: { key: HouseRule; label: string; hint: string }[] = [
     hint: 'Shuffle in the No Mercy Expansion Pack: 10s (play again), Wild Discard All (throw away a color you pick) and Wild Reverse Draw 8.',
   },
   { key: 'stackDraws', label: 'Stack +2 / +4', hint: 'Hit with a draw card? Play your own to pass the total on to the next player.' },
-  { key: 'stackSameNumber', label: 'Stack same numbers', hint: 'Play several cards of the same number at once, in any colors.' },
+  {
+    key: 'stackSameNumber',
+    label: 'Stack same numbers',
+    hint: 'Play several cards of the same number at once, in any colors. Matching action cards too, and each one counts: two Skips skip two players, two +2s make the next player draw 4.',
+  },
   { key: 'sevenZero', label: '7-0', hint: 'Playing a 7 swaps hands with a player you choose. Playing a 0 passes every hand along.' },
   { key: 'jumpIn', label: 'Jump-in', hint: 'Have the exact same card as the top one? Play it any time, even out of turn.' },
   { key: 'drawUntilPlayable', label: 'Draw until playable', hint: 'Keep drawing until you get a card you can play. Hands get big, so games run longer.' },
@@ -49,7 +53,10 @@ const FLIP_RULES: Partial<Record<HouseRule, { label: string; hint: string }>> = 
 
 /** UNO Show 'Em No Mercy wording for the rules that differ. */
 const NO_MERCY_RULES: Partial<Record<HouseRule, { label: string; hint: string }>> = {
-  stackSameNumber: { label: 'Stack same numbers', hint: 'Play several cards of the same number at once, in any colors. (Discard All already dumps a whole color.)' },
+  stackSameNumber: {
+    label: 'Stack same numbers',
+    hint: 'Play several cards of the same number at once, in any colors. Matching action cards too, and each one counts: two Discard Alls throw away both colors, two +4s add 8 to the stack.',
+  },
 };
 
 export function RulesPanel({ variantId = 'classic', rules, onChange, playerCount, online, readOnly }: RulesPanelProps) {
